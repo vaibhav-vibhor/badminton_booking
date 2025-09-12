@@ -16,7 +16,7 @@ on:
 jobs:
   check-badminton-slots:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # Increased for interactive OTP login
+    timeout-minutes: 45  # Increased for interactive OTP login with longer timeouts
     
     steps:
       - name: 🏸 Checkout Repository

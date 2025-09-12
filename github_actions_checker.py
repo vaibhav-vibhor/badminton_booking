@@ -322,15 +322,38 @@ class GitHubActionsChecker:
         try:
             logger.info("🔐 Starting interactive login process...")
             
-            # Navigate to login page
+            # Navigate to login page with increased timeout
+            logger.info("🌐 Navigating to login page...")
             await page.goto('https://booking.gopichandacademy.com/login', 
-                           wait_until='domcontentloaded', timeout=15000)
-            await asyncio.sleep(3)
+                           wait_until='networkidle', timeout=30000)
+            await asyncio.sleep(5)
             
-            # Find and fill phone number
-            phone_input = await page.wait_for_selector('input[type="tel"], input[name="phone"], input[name="mobile"]', timeout=10000)
+            # Find and fill phone number with multiple attempts
+            logger.info("📱 Looking for phone input field...")
+            phone_input = None
+            phone_selectors = [
+                'input[type="tel"]',
+                'input[name="phone"]',
+                'input[name="mobile"]',
+                'input[name="phoneNumber"]',
+                'input[placeholder*="phone" i]',
+                'input[placeholder*="mobile" i]',
+                'input[placeholder*="number" i]'
+            ]
+            
+            for selector in phone_selectors:
+                try:
+                    phone_input = await page.wait_for_selector(selector, timeout=5000)
+                    if phone_input:
+                        logger.info(f"✅ Found phone input: {selector}")
+                        break
+                except Exception:
+                    continue
+            
             if not phone_input:
-                logger.error("❌ Phone input field not found")
+                logger.error("❌ Phone input field not found after trying all selectors")
+                # Take screenshot for debugging
+                await page.screenshot(path='data/login_debug.png')
                 return False
                 
             await phone_input.clear()
@@ -338,35 +361,51 @@ class GitHubActionsChecker:
             clean_phone = self.phone_number.replace('+91', '').replace('+', '').strip()
             await phone_input.fill(clean_phone)
             logger.info(f"📱 Phone number filled: {clean_phone}")
+            await asyncio.sleep(2)
             
-            # Find and click send OTP button
+            # Find and click send OTP button with multiple attempts
+            logger.info("🔍 Looking for Send OTP button...")
             send_otp_selectors = [
                 'button:has-text("Send OTP")',
-                'button:has-text("Get OTP")', 
+                'button:has-text("Get OTP")',
+                'button:has-text("SEND OTP")',
+                'button:has-text("Submit")',
                 'button[type="submit"]',
                 'input[type="submit"]',
                 '.btn-primary',
-                '.otp-button'
+                '.otp-button',
+                'button.btn',
+                '[role="button"]:has-text("OTP")',
+                'a:has-text("Send")'
             ]
             
             otp_button = None
             for selector in send_otp_selectors:
                 try:
-                    otp_button = await page.query_selector(selector)
+                    otp_button = await page.wait_for_selector(selector, timeout=3000)
                     if otp_button:
-                        logger.info(f"Found OTP button: {selector}")
-                        break
-                except:
+                        # Check if button is visible and enabled
+                        is_visible = await otp_button.is_visible()
+                        is_enabled = await otp_button.is_enabled()
+                        if is_visible and is_enabled:
+                            logger.info(f"✅ Found OTP button: {selector}")
+                            break
+                        else:
+                            logger.info(f"⚠️ Found button but not usable: {selector} (visible: {is_visible}, enabled: {is_enabled})")
+                except Exception:
                     continue
             
             if not otp_button:
                 logger.error("❌ Send OTP button not found")
+                # Take screenshot for debugging
+                await page.screenshot(path='data/otp_button_debug.png')
                 return False
             
             # Click send OTP
+            logger.info("📤 Clicking Send OTP button...")
             await otp_button.click()
             logger.info("📤 OTP request sent")
-            await asyncio.sleep(3)
+            await asyncio.sleep(5)  # Wait longer for OTP to be sent
             
             # Send Telegram message asking for OTP
             otp_request_message = (
@@ -392,62 +431,91 @@ class GitHubActionsChecker:
                 self.send_telegram_message(error_msg)
                 return False
             
-            # Find OTP input field and enter the code
+            # Find OTP input field and enter the code with better detection
+            logger.info("🔍 Looking for OTP input field...")
             otp_input_selectors = [
                 'input[name="otp"]',
-                'input[placeholder*="OTP"]',
-                'input[placeholder*="code"]',
-                'input[type="text"]:not([name="phone"])',
-                'input[type="number"]'
+                'input[name="OTP"]',
+                'input[placeholder*="OTP" i]',
+                'input[placeholder*="code" i]',
+                'input[placeholder*="verify" i]',
+                'input[type="text"]:not([name="phone"]):not([name="mobile"])',
+                'input[type="number"]:not([name="phone"]):not([name="mobile"])',
+                'input.otp-input',
+                'input#otp',
+                'input[maxlength="6"]'
             ]
             
             otp_input = None
             for selector in otp_input_selectors:
                 try:
-                    otp_input = await page.query_selector(selector)
+                    otp_input = await page.wait_for_selector(selector, timeout=3000)
                     if otp_input:
-                        logger.info(f"Found OTP input: {selector}")
-                        break
-                except:
+                        is_visible = await otp_input.is_visible()
+                        if is_visible:
+                            logger.info(f"✅ Found OTP input: {selector}")
+                            break
+                        else:
+                            logger.info(f"⚠️ Found hidden OTP input: {selector}")
+                except Exception:
                     continue
             
             if not otp_input:
                 logger.error("❌ OTP input field not found")
+                # Take screenshot for debugging
+                await page.screenshot(path='data/otp_input_debug.png')
                 return False
             
             await otp_input.clear()
             await otp_input.fill(otp_code)
             logger.info(f"🔢 OTP entered: {otp_code}")
+            await asyncio.sleep(2)
             
-            # Find and click login/verify button
+            # Find and click login/verify button with better detection
+            logger.info("🔍 Looking for verify/login button...")
             login_selectors = [
                 'button:has-text("Verify")',
+                'button:has-text("VERIFY")',
                 'button:has-text("Login")',
+                'button:has-text("LOGIN")',
                 'button:has-text("Submit")',
+                'button:has-text("SUBMIT")',
                 'button[type="submit"]',
-                'input[type="submit"]'
+                'input[type="submit"]',
+                'button.btn-verify',
+                'button.verify-btn',
+                '.btn-primary'
             ]
             
             login_button = None
             for selector in login_selectors:
                 try:
-                    login_button = await page.query_selector(selector)
+                    login_button = await page.wait_for_selector(selector, timeout=3000)
                     if login_button:
-                        logger.info(f"Found login button: {selector}")
-                        break
-                except:
+                        is_visible = await login_button.is_visible()
+                        is_enabled = await login_button.is_enabled()
+                        if is_visible and is_enabled:
+                            logger.info(f"✅ Found login button: {selector}")
+                            break
+                        else:
+                            logger.info(f"⚠️ Found unusable login button: {selector} (visible: {is_visible}, enabled: {is_enabled})")
+                except Exception:
                     continue
             
             if not login_button:
                 logger.error("❌ Login button not found")
+                # Take screenshot for debugging
+                await page.screenshot(path='data/login_button_debug.png')
                 return False
             
             # Click login
+            logger.info("🚀 Clicking verify/login button...")
             await login_button.click()
             logger.info("🚀 Login submitted")
-            await asyncio.sleep(5)
+            await asyncio.sleep(8)  # Wait longer for login to process
             
             # Check if login was successful
+            logger.info(f"🔍 Current URL after login: {page.url}")
             if 'login' not in page.url.lower():
                 logger.info("✅ Interactive login successful!")
                 
@@ -638,13 +706,20 @@ class GitHubActionsChecker:
                 args=[
                     '--disable-blink-features=AutomationControlled',
                     '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-timeout',
                     '--disable-dev-shm-usage'
                 ]
             )
             
             context = await browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                viewport={'width': 1280, 'height': 720}
             )
+            
+            # Set longer default timeouts
+            context.set_default_timeout(60000)  # 60 seconds
+            context.set_default_navigation_timeout(60000)  # 60 seconds
             
             page = await context.new_page()
             
