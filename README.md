@@ -27,38 +27,10 @@ Go to your repository → Settings → Secrets and variables → Actions → New
 ### 3. Enable GitHub Actions
 Go to Actions tab → Enable workflows → Allow all actions
 
-### 4. Initial Session Setup (Required)
-
-Since GitHub Actions can't handle interactive login with OTP, you need to establish a session locally first:
-
-**Option A: Using the Setup Script (Recommended)**
-```bash
-# Run this locally after cloning your repository
-python setup_local_session.py
-```
-
-**Option B: Manual Setup** 
-```bash
-# Clone your repository locally
-git clone https://github.com/YOUR_USERNAME/badminton_booking.git
-cd badminton_booking
-
-# Install dependencies
-pip install -r requirements.txt
-playwright install chromium
-
-# Create .env file with your credentials
-cp .env.example .env
-# Edit .env file
-
-# Run once locally to create session
-python github_actions_checker.py
-# Complete the OTP login manually
-```
-
+### 4. Test Setup
 Run `python test_github_setup.py` locally to verify your configuration.
 
-### 6. Manual First Run
+### 5. Manual First Run
 Go to Actions → "🏸 Badminton Slot Checker" → Run workflow
 
 That's it! Your checker now runs automatically every hour! 🎉
