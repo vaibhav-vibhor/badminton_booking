@@ -38,40 +38,19 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
       
-      - name: � Check for Session Artifact
-        id: check-artifact
-        run: |
-          # Check if session-data artifact exists from previous runs
-          ARTIFACT_EXISTS=$(gh api repos/${{ github.repository }}/actions/artifacts --jq '.artifacts[] | select(.name=="session-data") | .name' || echo "")
-          if [ -n "$ARTIFACT_EXISTS" ]; then
-            echo "artifact_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Session artifact found - will download"
-          else
-            echo "artifact_exists=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ No session artifact found - fresh login required"
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: �💾 Download Session Data
-        if: steps.check-artifact.outputs.artifact_exists == 'true'
+      - name: 💾 Try Download Session Data
         uses: actions/download-artifact@v4
         with:
           name: session-data
           path: ./data
+        continue-on-error: true
         id: download-session
       
       - name: 📋 Session Status Check
         run: |
-          echo "🔍 Session Status Summary:"
-          if [ "${{ steps.check-artifact.outputs.artifact_exists }}" = "true" ]; then
-            if [ "${{ steps.download-session.outcome }}" = "success" ]; then
-              echo "✅ Session data downloaded successfully"
-              ls -la ./data/ || echo "No data directory found"
-            else
-              echo "⚠️ Session artifact found but download failed"
-              mkdir -p ./data
-            fi
+          if [ "${{ steps.download-session.outcome }}" = "success" ]; then
+            echo "✅ Session data downloaded successfully"
+            ls -la ./data/ || echo "No data directory found"
           else
             echo "ℹ️ No existing session found - this is normal for:"
             echo "   • First time running the workflow"
@@ -81,6 +60,8 @@ jobs:
             echo "📁 Creating data directory..."
             mkdir -p ./data
             echo "🔐 Fresh login will be required"
+            echo ""
+            echo "Note: Any 'Artifact not found' error above is expected and harmless"
           fi
       
       - name: 🔍 Check GitHub Secrets Setup
