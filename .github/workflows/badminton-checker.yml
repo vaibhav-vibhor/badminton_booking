@@ -16,7 +16,7 @@ on:
 jobs:
   check-badminton-slots:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30  # Increased for interactive OTP login
     
     steps:
       - name: 🏸 Checkout Repository
@@ -96,12 +96,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FORCE_FRESH_LOGIN: ${{ github.event.inputs.force_fresh_login }}
         run: |
-          echo "🏸 Starting automated badminton slot checker..."
-          python github_actions_checker.py || {
-            echo "⚠️ Checker failed - this is normal if no session exists yet"
-            echo "📋 Check your Telegram for setup instructions"
-            exit 0
-          }
+          python github_actions_checker.py
       
       - name: 💾 Save Session Data
         if: always()

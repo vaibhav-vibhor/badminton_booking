@@ -10,6 +10,7 @@ import sys
 import json
 import logging
 import requests
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -123,6 +124,63 @@ class GitHubActionsChecker:
         except Exception as e:
             logger.error(f"❌ Telegram error: {e}")
             return False
+
+    async def wait_for_otp_reply(self, timeout_minutes=5):
+        """Wait for OTP reply from user via Telegram"""
+        try:
+            # Get the latest message ID to know where to start checking
+            url = f"https://api.telegram.org/bot{self.telegram_token}/getUpdates"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code != 200:
+                logger.error("❌ Failed to get Telegram updates")
+                return None
+                
+            updates = response.json().get('result', [])
+            last_update_id = updates[-1]['update_id'] if updates else 0
+            
+            logger.info(f"⏳ Waiting for OTP reply (timeout: {timeout_minutes} minutes)...")
+            start_time = datetime.now()
+            timeout_seconds = timeout_minutes * 60
+            
+            while (datetime.now() - start_time).total_seconds() < timeout_seconds:
+                # Check for new messages
+                url = f"https://api.telegram.org/bot{self.telegram_token}/getUpdates"
+                params = {'offset': last_update_id + 1, 'timeout': 10}
+                
+                try:
+                    response = requests.get(url, params=params, timeout=15)
+                    if response.status_code != 200:
+                        continue
+                        
+                    updates = response.json().get('result', [])
+                    
+                    for update in updates:
+                        if 'message' in update and 'text' in update['message']:
+                            # Check if message is from the correct chat
+                            if str(update['message']['chat']['id']) == str(self.chat_id):
+                                message_text = update['message']['text'].strip()
+                                
+                                # Check if it looks like an OTP (4-6 digits)
+                                if message_text.isdigit() and 4 <= len(message_text) <= 6:
+                                    logger.info(f"✅ Received OTP: {message_text}")
+                                    return message_text
+                                
+                        last_update_id = update['update_id']
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Error checking for updates: {e}")
+                    continue
+                    
+                # Small delay between checks
+                await asyncio.sleep(2)
+            
+            logger.warning(f"⏰ OTP timeout after {timeout_minutes} minutes")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error waiting for OTP: {e}")
+            return None
     
     def get_check_dates(self):
         """Get next upcoming Friday and Monday"""
@@ -259,41 +317,172 @@ class GitHubActionsChecker:
             logger.error(f"Login verification failed: {e}")
             return False
     
-    async def send_setup_instructions(self):
-        """Send setup instructions for GitHub Actions"""
-        message = (
-            "🔧 *GitHub Actions Setup Required*\n\n"
-            "Your automated badminton checker is running but needs an initial login session.\n\n"
-            "*Option 1: Run locally once (Recommended)*\n"
-            "1️⃣ Clone your repository locally\n"
-            "2️⃣ Run: `python github_actions_checker.py`\n"
-            "3️⃣ Complete the login with OTP\n"
-            "4️⃣ The session will be saved for GitHub Actions\n\n"
-            "*Option 2: Alternative approach*\n"
-            "• Use a different automation service that supports interactive logins\n"
-            "• Or modify the script to use API-based authentication\n\n"
-            "⚠️ *Important*: GitHub Actions cannot handle interactive logins with OTP.\n\n"
-            "Once you run locally once, GitHub Actions will work automatically! 🚀"
-        )
-        
-        self.send_telegram_message(message)
-        logger.info("Setup instructions sent via Telegram")
-    
-    async def request_manual_login(self):
-        """Request manual login intervention"""
-        message = (
-            "🔐 *Manual Login Required*\n\n"
-            "The automated badminton checker needs you to login:\n\n"
-            "1️⃣ Go to GitHub → Actions → Badminton Slot Checker\n"
-            "2️⃣ Click 'Run workflow'\n"
-            "3️⃣ Check 'Force fresh login'\n"
-            "4️⃣ Run the workflow\n\n"
-            "OR run the script locally once to refresh the session.\n\n"
-            "I'll try again in the next hour."
-        )
-        
-        self.send_telegram_message(message)
-        logger.warning("Manual login required - sent Telegram notification")
+    async def interactive_login(self, page):
+        """Interactive login with OTP via Telegram"""
+        try:
+            logger.info("🔐 Starting interactive login process...")
+            
+            # Navigate to login page
+            await page.goto('https://booking.gopichandacademy.com/login', 
+                           wait_until='domcontentloaded', timeout=15000)
+            await asyncio.sleep(3)
+            
+            # Find and fill phone number
+            phone_input = await page.wait_for_selector('input[type="tel"], input[name="phone"], input[name="mobile"]', timeout=10000)
+            if not phone_input:
+                logger.error("❌ Phone input field not found")
+                return False
+                
+            await phone_input.clear()
+            # Remove +91 or other country codes as the site might add it automatically
+            clean_phone = self.phone_number.replace('+91', '').replace('+', '').strip()
+            await phone_input.fill(clean_phone)
+            logger.info(f"📱 Phone number filled: {clean_phone}")
+            
+            # Find and click send OTP button
+            send_otp_selectors = [
+                'button:has-text("Send OTP")',
+                'button:has-text("Get OTP")', 
+                'button[type="submit"]',
+                'input[type="submit"]',
+                '.btn-primary',
+                '.otp-button'
+            ]
+            
+            otp_button = None
+            for selector in send_otp_selectors:
+                try:
+                    otp_button = await page.query_selector(selector)
+                    if otp_button:
+                        logger.info(f"Found OTP button: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not otp_button:
+                logger.error("❌ Send OTP button not found")
+                return False
+            
+            # Click send OTP
+            await otp_button.click()
+            logger.info("📤 OTP request sent")
+            await asyncio.sleep(3)
+            
+            # Send Telegram message asking for OTP
+            otp_request_message = (
+                "🔐 *OTP Required for Badminton Checker*\n\n"
+                f"📱 An OTP has been sent to your phone: `{clean_phone}`\n\n"
+                "Please reply to this message with the OTP code (4-6 digits) within 5 minutes.\n\n"
+                "Example: `123456`"
+            )
+            
+            if not self.send_telegram_message(otp_request_message):
+                logger.error("❌ Failed to send OTP request message")
+                return False
+            
+            # Wait for OTP reply
+            otp_code = await self.wait_for_otp_reply(timeout_minutes=5)
+            if not otp_code:
+                error_msg = (
+                    "⏰ *OTP Timeout*\n\n"
+                    "Did not receive OTP within 5 minutes.\n"
+                    "The login attempt has failed.\n\n"
+                    "I'll try again in the next hour."
+                )
+                self.send_telegram_message(error_msg)
+                return False
+            
+            # Find OTP input field and enter the code
+            otp_input_selectors = [
+                'input[name="otp"]',
+                'input[placeholder*="OTP"]',
+                'input[placeholder*="code"]',
+                'input[type="text"]:not([name="phone"])',
+                'input[type="number"]'
+            ]
+            
+            otp_input = None
+            for selector in otp_input_selectors:
+                try:
+                    otp_input = await page.query_selector(selector)
+                    if otp_input:
+                        logger.info(f"Found OTP input: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not otp_input:
+                logger.error("❌ OTP input field not found")
+                return False
+            
+            await otp_input.clear()
+            await otp_input.fill(otp_code)
+            logger.info(f"🔢 OTP entered: {otp_code}")
+            
+            # Find and click login/verify button
+            login_selectors = [
+                'button:has-text("Verify")',
+                'button:has-text("Login")',
+                'button:has-text("Submit")',
+                'button[type="submit"]',
+                'input[type="submit"]'
+            ]
+            
+            login_button = None
+            for selector in login_selectors:
+                try:
+                    login_button = await page.query_selector(selector)
+                    if login_button:
+                        logger.info(f"Found login button: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not login_button:
+                logger.error("❌ Login button not found")
+                return False
+            
+            # Click login
+            await login_button.click()
+            logger.info("🚀 Login submitted")
+            await asyncio.sleep(5)
+            
+            # Check if login was successful
+            if 'login' not in page.url.lower():
+                logger.info("✅ Interactive login successful!")
+                
+                success_msg = (
+                    "✅ *Login Successful!*\n\n"
+                    "Your badminton slot checker is now logged in.\n"
+                    "Continuing with slot checking...\n\n"
+                    "🏸 I'll check for available slots now!"
+                )
+                self.send_telegram_message(success_msg)
+                
+                # Save the session
+                await self.save_session(page)
+                return True
+            else:
+                logger.error("❌ Login failed - still on login page")
+                
+                fail_msg = (
+                    "❌ *Login Failed*\n\n"
+                    "The OTP might be incorrect or expired.\n"
+                    "I'll try again in the next hour.\n\n"
+                    "Make sure to reply quickly with the correct OTP next time."
+                )
+                self.send_telegram_message(fail_msg)
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Interactive login failed: {e}")
+            error_msg = (
+                "❌ *Login Error*\n\n"
+                f"An error occurred during login: {str(e)}\n\n"
+                "I'll try again in the next hour."
+            )
+            self.send_telegram_message(error_msg)
+            return False
     
     async def check_academy_slots(self, page, academy, dates):
         """Check slots for one academy"""
@@ -472,17 +661,17 @@ class GitHubActionsChecker:
                     logged_in = False
                 
                 if not logged_in:
-                    # Check if we're in GitHub Actions environment
-                    if os.getenv('GITHUB_ACTIONS'):
-                        logger.warning("❌ No valid session in GitHub Actions environment")
-                        await self.send_setup_instructions()
+                    logger.warning("❌ Not logged in - attempting interactive login")
+                    
+                    # Try interactive login
+                    login_success = await self.interactive_login(page)
+                    if not login_success:
+                        logger.error("❌ Interactive login failed")
                         return
-                    else:
-                        logger.warning("❌ Not logged in - requesting manual intervention")
-                        await self.request_manual_login()
-                        return
-                
-                logger.info("✅ Logged in successfully, proceeding with checks...")
+                    
+                    logger.info("✅ Interactive login successful, proceeding...")
+                else:
+                    logger.info("✅ Already logged in, proceeding with checks...")
                 
                 # Check all academies
                 all_available_slots = []
