@@ -1,52 +1,62 @@
-# 🏸 Badminton Booking Slot Checker
+# 🏸 Automated Badminton Slot Checker
 
-An automated system that monitors badminton court availability across multiple Gopichand Academy locations and sends instant notifications when your preferred slots become available. **Now automatically focuses on upcoming Fridays and Mondays!**
+An automated GitHub Actions-powered system that monitors badminton court availability at Gopichand Academy locations every hour and sends instant Telegram notifications when slots become available on upcoming Fridays and Mondays.
 
-## 🚀 Features
+## 🚀 Key Features
 
-- **Multi-Academy Monitoring**: Checks all 3 Gopichand Academy locations simultaneously
-  - Kotak Pullela Gopichand Badminton Academy
-  - Pullela Gopichand Badminton Academy  
-  - SAI Gopichand Pullela Gopichand Badminton Academy
+- **🤖 Fully Automated**: Runs every hour on GitHub Actions (completely free hosting)
+- **📅 Smart Date Logic**: Automatically checks next upcoming Friday and Monday only
+- **🏫 Multi-Academy Support**: Monitors all Gopichand Academy locations
+- **💾 Session Persistence**: Maintains login between automated runs
+- **📱 Instant Notifications**: Real-time Telegram alerts with slot details
+- **🔄 Headless Operation**: Runs invisibly on GitHub servers
+- **⚡ Zero Maintenance**: Set once, runs automatically forever
 
-- **Friday & Monday Focus**: Automatically checks upcoming Fridays and Mondays (next 2 weeks)
-- **Smart Session Management**: Maintains login session across page navigation
-- **Instant Notifications**: Real-time Telegram alerts when slots become available  
-- **Easy Execution**: Simple one-click batch file or Python script
-- **Automated Login**: Handles phone number + OTP authentication
-- **Error Handling**: Robust error recovery and notification system
+## 🎯 Quick Setup (5 Minutes)
 
-## 📋 Prerequisites
+### 1. Fork This Repository
+Click the "Fork" button on GitHub to copy this repo to your account.
 
-1. **Phone number** registered with Gopichand Academy booking system
-2. **Telegram account** for receiving notifications
-3. **GitHub account** for free hosting (optional for manual runs)
+### 2. Add GitHub Secrets
+Go to your repository → Settings → Secrets and variables → Actions → New repository secret:
 
-## 🎯 Quick Start - Friday & Monday Checker
+- `PHONE_NUMBER`: Your phone number with country code (e.g., +1234567890)
+- `TELEGRAM_BOT_TOKEN`: Get from [@BotFather](https://t.me/botfather)  
+- `TELEGRAM_CHAT_ID`: Get from [@RawDataBot](https://t.me/rawdatabot)
 
-The easiest way to check upcoming Friday and Monday availability:
+### 3. Enable GitHub Actions
+Go to Actions tab → Enable workflows → Allow all actions
 
-### Local Execution (Recommended)
+### 4. Test Setup
+Run `python test_github_setup.py` locally to verify your configuration.
 
-1. **Clone/Download** this repository
-2. **Create `.env` file** in the root directory:
-```env
-PHONE_NUMBER=your_phone_number
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
+### 5. Manual First Run
+Go to Actions → "🏸 Badminton Slot Checker" → Run workflow
+
+That's it! Your checker now runs automatically every hour! 🎉
+
+## 📁 Project Structure
+
 ```
-
-3. **Run the checker**:
-   - **Windows**: Double-click `run_friday_monday_checker.bat`
-   - **Command line**: `python friday_monday_checker.py`
-
-4. **Manual OTP entry**: Enter OTP code when prompted in the browser
-
-The script will automatically:
-- ✅ Check next 2 upcoming Fridays and Mondays
-- ✅ Login and maintain session across all academies
-- ✅ Send detailed Telegram notification with all available slots
-- ✅ Display results in console with clear formatting
+badminton_booking/
+├── .github/workflows/          # GitHub Actions automation
+│   └── badminton-checker.yml   # Hourly workflow definition
+├── src/                        # Core application modules
+│   ├── main.py                 # Main checker logic
+│   ├── login_handler.py        # Login and session management
+│   ├── booking_checker.py      # Slot availability checking
+│   ├── notification_handler.py # Telegram notifications
+│   └── ...                     # Other core modules
+├── config/                     # Configuration files
+├── data/                       # Session data (auto-managed)
+├── logs/                       # Application logs
+├── github_actions_checker.py   # GitHub Actions entry point
+├── test_github_setup.py        # Setup verification tool
+├── get_chat_id.py             # Utility to find Telegram chat ID
+├── requirements.txt            # Python dependencies
+├── GITHUB_ACTIONS_SETUP.md     # Detailed setup guide
+└── README.md                   # This file
+```
 
 ## 🛠️ Setup Instructions
 
@@ -109,184 +119,85 @@ The script will automatically:
 }
 ```
 
-### Step 4: Enable GitHub Actions
+## 🔧 Local Development & Testing
 
-1. Go to **Actions** tab in your repository
-2. Click **"I understand my workflows, go ahead and enable them"**
-3. The checker will now run automatically every 15 minutes!
+### Prerequisites
+- Python 3.11+
+- Registered phone number with Gopichand Academy
 
-## 🎯 Usage
-
-### Automatic Monitoring
-
-Once set up, the system runs automatically:
-- **Every 15 minutes** during peak hours (9 AM - 11 PM IST)
-- **Checks all configured academies** for your preferred dates
-- **Sends Telegram notifications** when slots are found
-- **Prevents duplicate alerts** for the same slots
-
-### Manual Execution
-
-You can also trigger manual checks:
-
-1. Go to **Actions** tab in your repository
-2. Click on **"Badminton Slot Checker"** workflow
-3. Click **"Run workflow"** button
-4. Choose options:
-   - **Check mode**: `single` (one-time check) or `test` (system test)
-   - **Specific date**: Override configured dates (optional)
-   - **Verbose logging**: Enable detailed logs for debugging
-
-### Local Testing
-
-To run locally for testing:
-
+### Local Setup
 ```bash
-# Clone your repository
-git clone https://github.com/YOUR_USERNAME/BadmintonBooking.git
-cd BadmintonBooking
+# Clone your forked repository
+git clone https://github.com/YOUR_USERNAME/badminton_booking.git
+cd badminton_booking
 
-# Install dependencies
+# Install dependencies  
 pip install -r requirements.txt
 playwright install chromium
 
-# Copy environment template
+# Create local environment file
 cp .env.example .env
-
 # Edit .env with your credentials
-# PHONE_NUMBER=your_phone_number
-# TELEGRAM_BOT_TOKEN=your_bot_token  
-# TELEGRAM_CHAT_ID=your_chat_id
 
-# Test the system
-cd src
-python main.py --mode test
+# Test your setup
+python test_github_setup.py
 
-# Run single check
-python main.py --mode single --verbose
+# Run a local test
+python github_actions_checker.py
 ```
 
-## 📱 Notification Examples
+## 📱 How It Works
 
-### Single Slot Found
+1. **Automated Schedule**: GitHub Actions runs the checker every hour
+2. **Session Management**: Maintains login cookies between runs using GitHub artifacts
+3. **Smart Date Logic**: Always checks the next upcoming Friday and Monday
+4. **Multi-Academy Check**: Simultaneously monitors all Gopichand Academy locations
+5. **Instant Alerts**: Sends detailed Telegram messages with available slot information
+6. **Error Recovery**: Handles login failures, network issues, and session expiration
+
+## 🔍 Available Utilities
+
+### Test Your Setup
+```bash
+python test_github_setup.py
 ```
-🏸 ⭐ BADMINTON SLOT AVAILABLE!
+Verifies all environment variables and connections.
 
-🏛️ Academy: Kotak Pullela Gopichand
-📅 Date: 15 Sep 2025 (Monday)
-🏟️ Court: Court 2
-⏰ Time: 18:00-19:00
-
-🔗 Book now: https://booking.gopichandacademy.com/venue-details/1
-
-⚡ Book quickly as slots fill up fast!
+### Get Your Telegram Chat ID  
+```bash
+python get_chat_id.py
 ```
+Interactive tool to find your Telegram chat ID.
 
-### Multiple Slots Found
-```
-🏸 5 BADMINTON SLOTS AVAILABLE!
-⭐ 3 preferred slots found
+## 📊 Monitoring & Logs
 
-🏛️ Kotak (3 slots):
-  ⭐ 15 Sep • Court 2 • 18:00-19:00
-  ⭐ 15 Sep • Court 3 • 19:00-20:00
-  16 Sep • Court 1 • 21:00-22:00
-
-🏛️ Pullela (2 slots):
-  ⭐ 16 Sep • Court 4 • 20:00-21:00
-  17 Sep • Court 2 • 17:00-18:00
-
-🔗 Book at: https://booking.gopichandacademy.com/
-⚡ Book quickly as slots fill up fast!
-```
-
-## ⚙️ Configuration Options
-
-### Date Configuration
-- **dates_to_check**: List of dates in YYYY-MM-DD format
-- Update regularly or use date ranges
-
-### Time Preferences
-- **preferred**: High-priority time slots (get ⭐ in notifications)
-- **acceptable**: Secondary time slots
-- **notify_all**: Set to `true` to get notified about any available slot
-
-### Court Preferences  
-- **preferred_courts**: List of court numbers [1, 2, 3, etc.]
-- **check_all_courts**: Set to `false` to only check preferred courts
-
-### Academy Selection
-- **academies_to_check**: `["kotak", "pullela", "sai"]` or `["all"]`
-- Can exclude academies you don't want to check
-
-### Notification Settings
-- **notify_immediately**: Send notifications as soon as slots are found
-- **batch_notifications**: Group multiple slots in one message
-- **max_notifications_per_run**: Limit notifications per check cycle
+- **GitHub Actions Logs**: View execution details in the Actions tab
+- **Telegram Notifications**: Get real-time updates on your phone
+- **Session Persistence**: Automatic session management between runs
+- **Error Alerts**: Notification of any system failures
 
 ## 🔧 Troubleshooting
 
 ### Common Issues
+1. **No notifications**: Check your Telegram bot token and chat ID
+2. **Login failures**: GitHub Actions may need a fresh session (run manually once)
+3. **Missing slots**: Verify your phone number is registered with the academy
+4. **Workflow disabled**: Ensure GitHub Actions are enabled in your repository
 
-**1. No notifications received**
-- Verify Telegram bot token and chat ID in repository secrets
-- Check that you've sent a message to your bot first
-- Look at GitHub Actions logs for errors
+### Getting Help
+- Check `GITHUB_ACTIONS_SETUP.md` for detailed setup instructions  
+- Review GitHub Actions logs for error details
+- Test locally with `python test_github_setup.py`
 
-**2. Login failures**
-- Ensure phone number is correctly formatted (without +91)
-- Check if OTP is required (current limitation - needs manual intervention)
+## 📄 License
 
-**3. GitHub Actions not running**
-- Verify Actions are enabled in repository settings
-- Check that secrets are properly configured
-- Repository must have recent commits (GitHub disables inactive workflows)
+MIT License - Feel free to modify and distribute!
 
-**4. Wrong dates being checked**
-- Update `config/check_dates.json` with future dates
-- Past dates are automatically filtered out
+## 🙏 Contributing
 
-### Advanced Troubleshooting
+---
 
-**Enable verbose logging:**
-```bash
-python main.py --mode single --verbose
-```
-
-**Test individual components:**
-```bash
-python main.py --mode test
-```
-
-**Check logs in GitHub Actions:**
-1. Go to Actions tab
-2. Click on latest workflow run
-3. Expand "Run badminton slot checker" step
-4. Review detailed logs
-
-### OTP Handling Limitation
-
-Currently, OTP must be entered manually for first-time login. To work around this:
-
-1. Run the script locally once to establish a session
-2. The session cookies will be saved for future runs
-3. GitHub Actions will use the established session
-
-*Future enhancement: Automated OTP handling via SMS API or email parsing*
-
-## 📊 Monitoring and Analytics
-
-### Check History
-- All checks are logged to `data/check_history.json`
-- Includes success/failure rates, slots found, errors
-
-### Slot Data
-- Latest slots saved to `data/latest_slots.json`  
-- Historical data for analysis
-
-### GitHub Actions Insights
-- View run history and success rates
-- Download logs and slot data as artifacts
+**� Happy badminton booking! May you always find your perfect court time! 🏸**
 - Weekly summary notifications
 
 ## 🚨 Rate Limiting and Best Practices
