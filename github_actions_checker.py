@@ -70,8 +70,35 @@ class GitHubActionsChecker:
         ]
         
         # Validate required config
-        if not all([self.phone_number, self.telegram_token, self.chat_id]):
-            raise ValueError("Missing required environment variables")
+        missing_vars = []
+        if not self.phone_number:
+            missing_vars.append("PHONE_NUMBER")
+        if not self.telegram_token:
+            missing_vars.append("TELEGRAM_BOT_TOKEN") 
+        if not self.chat_id:
+            missing_vars.append("TELEGRAM_CHAT_ID")
+            
+        if missing_vars:
+            error_msg = f"Missing required environment variables: {', '.join(missing_vars)}"
+            logger.error(f"❌ Startup failed: {error_msg}")
+            
+            # In GitHub Actions, provide helpful setup instructions
+            if os.getenv('GITHUB_ACTIONS'):
+                logger.error("🚨 GITHUB SECRETS SETUP REQUIRED:")
+                logger.error(f"1. Go to: https://github.com/{os.getenv('GITHUB_REPOSITORY', 'YOUR_REPO')}/settings/secrets/actions")
+                logger.error("2. Click 'New repository secret'")
+                logger.error("3. Add these secrets:")
+                for var in missing_vars:
+                    if var == "PHONE_NUMBER":
+                        logger.error(f"   • {var}: Your phone number with country code (e.g., +1234567890)")
+                    elif var == "TELEGRAM_BOT_TOKEN":
+                        logger.error(f"   • {var}: Get from @BotFather on Telegram")
+                    elif var == "TELEGRAM_CHAT_ID":
+                        logger.error(f"   • {var}: Get from @RawDataBot on Telegram")
+                logger.error("")
+                logger.error("For detailed instructions, see: GITHUB_ACTIONS_SETUP.md")
+            
+            raise ValueError(error_msg)
     
     def send_telegram_message(self, message):
         """Send message via Telegram"""
