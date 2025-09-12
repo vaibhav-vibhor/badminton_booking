@@ -28,10 +28,15 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       
-      - name: 📦 Install Dependencies
+      - name: 📦 Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2t64 libxss1 libatk-bridge2.0-0 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxkbcommon0 libatspi2.0-0
+      
+      - name: 📦 Install Python Dependencies
         run: |
           pip install -r requirements.txt
-          playwright install chromium --with-deps
+          playwright install chromium
       
       - name: 💾 Download Session Data
         uses: actions/download-artifact@v4
