@@ -259,6 +259,26 @@ class GitHubActionsChecker:
             logger.error(f"Login verification failed: {e}")
             return False
     
+    async def send_setup_instructions(self):
+        """Send setup instructions for GitHub Actions"""
+        message = (
+            "🔧 *GitHub Actions Setup Required*\n\n"
+            "Your automated badminton checker is running but needs an initial login session.\n\n"
+            "*Option 1: Run locally once (Recommended)*\n"
+            "1️⃣ Clone your repository locally\n"
+            "2️⃣ Run: `python github_actions_checker.py`\n"
+            "3️⃣ Complete the login with OTP\n"
+            "4️⃣ The session will be saved for GitHub Actions\n\n"
+            "*Option 2: Alternative approach*\n"
+            "• Use a different automation service that supports interactive logins\n"
+            "• Or modify the script to use API-based authentication\n\n"
+            "⚠️ *Important*: GitHub Actions cannot handle interactive logins with OTP.\n\n"
+            "Once you run locally once, GitHub Actions will work automatically! 🚀"
+        )
+        
+        self.send_telegram_message(message)
+        logger.info("Setup instructions sent via Telegram")
+    
     async def request_manual_login(self):
         """Request manual login intervention"""
         message = (
@@ -452,9 +472,15 @@ class GitHubActionsChecker:
                     logged_in = False
                 
                 if not logged_in:
-                    logger.warning("❌ Not logged in - requesting manual intervention")
-                    await self.request_manual_login()
-                    return
+                    # Check if we're in GitHub Actions environment
+                    if os.getenv('GITHUB_ACTIONS'):
+                        logger.warning("❌ No valid session in GitHub Actions environment")
+                        await self.send_setup_instructions()
+                        return
+                    else:
+                        logger.warning("❌ Not logged in - requesting manual intervention")
+                        await self.request_manual_login()
+                        return
                 
                 logger.info("✅ Logged in successfully, proceeding with checks...")
                 

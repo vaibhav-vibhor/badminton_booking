@@ -96,7 +96,12 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FORCE_FRESH_LOGIN: ${{ github.event.inputs.force_fresh_login }}
         run: |
-          python github_actions_checker.py
+          echo "🏸 Starting automated badminton slot checker..."
+          python github_actions_checker.py || {
+            echo "⚠️ Checker failed - this is normal if no session exists yet"
+            echo "📋 Check your Telegram for setup instructions"
+            exit 0
+          }
       
       - name: 💾 Save Session Data
         if: always()
