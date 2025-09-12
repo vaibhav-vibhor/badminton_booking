@@ -328,6 +328,11 @@ class GitHubActionsChecker:
                            wait_until='networkidle', timeout=30000)
             await asyncio.sleep(5)
             
+            # Log page info after navigation
+            title = await page.title()
+            url = page.url
+            logger.info(f"📄 Page loaded - Title: '{title}', URL: '{url}'")
+            
             # Find and fill phone number with multiple attempts
             logger.info("📱 Looking for phone input field...")
             phone_input = None
@@ -352,8 +357,36 @@ class GitHubActionsChecker:
             
             if not phone_input:
                 logger.error("❌ Phone input field not found after trying all selectors")
+                
+                # Enhanced debugging - get page info
+                try:
+                    title = await page.title()
+                    url = page.url
+                    logger.error(f"📄 Current page - Title: '{title}', URL: '{url}'")
+                    
+                    # Check what inputs are actually available
+                    all_inputs = await page.query_selector_all('input')
+                    logger.error(f"📝 Found {len(all_inputs)} input elements on page:")
+                    
+                    for i, inp in enumerate(all_inputs[:10]):  # Limit to first 10
+                        input_type = await inp.get_attribute('type') or 'no-type'
+                        input_name = await inp.get_attribute('name') or 'no-name'
+                        input_id = await inp.get_attribute('id') or 'no-id'
+                        input_placeholder = await inp.get_attribute('placeholder') or 'no-placeholder'
+                        logger.error(f"  Input #{i+1}: type='{input_type}', name='{input_name}', id='{input_id}', placeholder='{input_placeholder}'")
+                    
+                    # Save page content for analysis
+                    page_content = await page.content()
+                    with open('data/login_page_content.html', 'w', encoding='utf-8') as f:
+                        f.write(page_content)
+                    logger.error("💾 Page content saved to data/login_page_content.html")
+                    
+                except Exception as debug_e:
+                    logger.error(f"Debug info collection failed: {debug_e}")
+                
                 # Take screenshot for debugging
                 await page.screenshot(path='data/login_debug.png')
+                logger.error("📸 Debug screenshot saved to data/login_debug.png")
                 return False
                 
             await phone_input.clear()
