@@ -326,12 +326,61 @@ class GitHubActionsChecker:
             logger.info("🌐 Navigating to login page...")
             await page.goto('https://booking.gopichandacademy.com/login', 
                            wait_until='networkidle', timeout=30000)
-            await asyncio.sleep(5)
             
             # Log page info after navigation
             title = await page.title()
             url = page.url
             logger.info(f"📄 Page loaded - Title: '{title}', URL: '{url}'")
+            
+            # Wait longer for dynamic content to load
+            logger.info("⏳ Waiting for dynamic content to load...")
+            await asyncio.sleep(10)
+            
+            # Check if there are any scripts or dynamic content loading
+            scripts = await page.query_selector_all('script')
+            logger.info(f"🔧 Found {len(scripts)} script tags on page")
+            
+            # Check for common loading indicators
+            loading_indicators = ['loading', 'spinner', 'loader']
+            for indicator in loading_indicators:
+                elements = await page.query_selector_all(f'[class*="{indicator}"], [id*="{indicator}"]')
+                if elements:
+                    logger.info(f"🔄 Found loading indicator: {indicator}")
+            
+            # Try waiting for any input to appear
+            logger.info("🔍 Waiting for any input element to appear...")
+            try:
+                await page.wait_for_selector('input', timeout=15000)
+                logger.info("✅ Input element appeared after waiting")
+            except Exception:
+                logger.warning("⚠️ No input elements appeared after 15 seconds")
+            
+            # Check again after waiting
+            all_inputs_after_wait = await page.query_selector_all('input')
+            logger.info(f"📝 Found {len(all_inputs_after_wait)} input elements after waiting")
+            
+            # Check for iframes that might contain the login form
+            iframes = await page.query_selector_all('iframe')
+            logger.info(f"🖼️ Found {len(iframes)} iframe(s) on page")
+            
+            if iframes:
+                for i, iframe in enumerate(iframes):
+                    try:
+                        frame = await iframe.content_frame()
+                        if frame:
+                            frame_inputs = await frame.query_selector_all('input')
+                            logger.info(f"📝 Iframe #{i+1} contains {len(frame_inputs)} input elements")
+                            if frame_inputs:
+                                logger.info("🎯 Found inputs in iframe - switching context")
+                                # Switch to this frame for further operations
+                                page = frame
+                                break
+                    except Exception as e:
+                        logger.info(f"⚠️ Could not access iframe #{i+1}: {e}")
+            
+            # Re-check for inputs in current context (main page or iframe)
+            final_inputs = await page.query_selector_all('input')
+            logger.info(f"📝 Final input count in current context: {len(final_inputs)}")
             
             # Find and fill phone number with multiple attempts
             logger.info("📱 Looking for phone input field...")
