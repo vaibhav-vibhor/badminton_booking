@@ -44,6 +44,25 @@ jobs:
           name: session-data
           path: ./data
         continue-on-error: true
+        id: download-session
+      
+      - name: 📋 Session Status Check
+        run: |
+          if [ "${{ steps.download-session.outcome }}" = "success" ]; then
+            echo "✅ Session data downloaded successfully"
+            ls -la ./data/ || echo "No data directory found"
+          else
+            echo "⚠️ No existing session found - this is expected for:"
+            echo "   • First time running the workflow"
+            echo "   • Session artifacts older than 7 days (expired)"  
+            echo "   • Previous runs that didn't complete successfully"
+            echo ""
+            echo "📁 Creating data directory..."
+            mkdir -p ./data
+            echo "🔐 Fresh login will be required"
+            echo ""
+            echo "ℹ️ This 'Artifact not found' error is harmless and expected!"
+          fi
       
       - name: 🔍 Check GitHub Secrets Setup
         env:
@@ -100,6 +119,18 @@ jobs:
       
       - name: 💾 Save Session Data
         if: always()
+        run: |
+          echo "📋 Checking for session data to save..."
+          if [ -d "./data" ] && [ "$(ls -A ./data)" ]; then
+            echo "✅ Session data found, uploading artifact..."
+            echo "UPLOAD_SESSION=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ No session data to save"
+            echo "UPLOAD_SESSION=false" >> $GITHUB_ENV
+          fi
+      
+      - name: 📤 Upload Session Artifact
+        if: always() && env.UPLOAD_SESSION == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: session-data
