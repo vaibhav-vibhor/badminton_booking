@@ -1,0 +1,58 @@
+name: 🏸 Badminton Slot Checker
+
+on:
+  schedule:
+    # Run every hour at 5 minutes past the hour
+    - cron: '5 * * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      force_fresh_login:
+        description: 'Force fresh login (check this if session expired)'
+        type: boolean
+        default: false
+
+jobs:
+  check-badminton-slots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: 🏸 Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: 📦 Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+      
+      - name: 💾 Download Session Data
+        uses: actions/download-artifact@v4
+        with:
+          name: session-data
+          path: ./data
+        continue-on-error: true
+      
+      - name: 🔍 Run Badminton Checker
+        env:
+          PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FORCE_FRESH_LOGIN: ${{ github.event.inputs.force_fresh_login }}
+        run: |
+          python github_actions_checker.py
+      
+      - name: 💾 Save Session Data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-data
+          path: ./data
+          retention-days: 7

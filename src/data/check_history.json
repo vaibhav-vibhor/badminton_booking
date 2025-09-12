@@ -1,0 +1,42 @@
+[
+  {
+    "timestamp": "2025-09-12T12:20:53.426352",
+    "success": false,
+    "slots_found": 0,
+    "academies_checked": [],
+    "error": "Login failed",
+    "duration_seconds": 20.220203
+  },
+  {
+    "timestamp": "2025-09-12T13:27:15.725576",
+    "success": false,
+    "slots_found": 0,
+    "academies_checked": [],
+    "error": "Login failed",
+    "duration_seconds": 107.021131
+  },
+  {
+    "timestamp": "2025-09-12T13:31:13.001311",
+    "success": false,
+    "slots_found": 0,
+    "academies_checked": [],
+    "error": "Login failed",
+    "duration_seconds": 68.620266
+  },
+  {
+    "timestamp": "2025-09-12T13:32:51.565132",
+    "success": false,
+    "slots_found": 0,
+    "academies_checked": [],
+    "error": "Login failed",
+    "duration_seconds": 82.429916
+  },
+  {
+    "timestamp": "2025-09-12T13:46:49.276073",
+    "success": false,
+    "slots_found": 0,
+    "academies_checked": [],
+    "error": "Login failed",
+    "duration_seconds": 115.271127
+  }
+]

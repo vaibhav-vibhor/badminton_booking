@@ -1,0 +1,47 @@
+# Badminton Booking Checker Logs
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/*.log
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Browser data
+browser_data/
+cookies.json
+session.json
+
+# Data files (except examples)
+data/*.json
+!data/.gitkeep
+
+# Test outputs
+test-results/
+screenshots/

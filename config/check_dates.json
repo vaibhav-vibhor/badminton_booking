@@ -1,0 +1,33 @@
+{
+    "dates_to_check": [
+        "2025-09-13",
+        "2025-09-14",
+        "2025-09-15",
+        "2025-09-16",
+        "2025-09-17",
+        "2025-09-18"
+    ],
+    "time_preferences": {
+        "preferred": [
+            "18:00-19:00",
+            "19:00-20:00",
+            "20:00-21:00"
+        ],
+        "acceptable": [
+            "17:00-18:00",
+            "21:00-22:00"
+        ],
+        "notify_all": false
+    },
+    "court_preferences": {
+        "preferred_courts": [1, 2, 3, 4, 5],
+        "check_all_courts": true
+    },
+    "academies_to_check": ["kotak", "pullela", "sai"],
+    "notification_settings": {
+        "notify_immediately": true,
+        "batch_notifications": false,
+        "include_booked_summary": false,
+        "max_notifications_per_run": 10
+    }
+}
