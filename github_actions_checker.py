@@ -17,6 +17,42 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
+# Load environment variables from .env file if running locally
+def load_env_file():
+    """Load environment variables from .env file if it exists"""
+    env_file = Path(__file__).parent / '.env'
+    
+    if env_file.exists():
+        try:
+            with open(env_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    
+                    # Skip comments and empty lines
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    # Parse KEY=VALUE format
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # Remove quotes if present
+                        if value.startswith('"') and value.endswith('"'):
+                            value = value[1:-1]
+                        elif value.startswith("'") and value.endswith("'"):
+                            value = value[1:-1]
+                        
+                        # Set environment variable only if not already set
+                        if key not in os.environ:
+                            os.environ[key] = value
+        except Exception as e:
+            print(f"Warning: Failed to load .env file: {e}")
+
+# Load .env file on import
+load_env_file()
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -322,9 +358,9 @@ class GitHubActionsChecker:
         try:
             logger.info("🔐 Starting interactive login process...")
             
-            # Navigate to login page with increased timeout
-            logger.info("🌐 Navigating to login page...")
-            await page.goto('https://booking.gopichandacademy.com/login', 
+            # Navigate to main SPA page first (since /login returns 404)
+            logger.info("🌐 Navigating to main SPA page...")
+            await page.goto('https://booking.gopichandacademy.com/', 
                            wait_until='networkidle', timeout=30000)
             
             # Log page info after navigation
@@ -333,12 +369,89 @@ class GitHubActionsChecker:
             logger.info(f"📄 Page loaded - Title: '{title}', URL: '{url}'")
             
             # Wait longer for dynamic content to load
-            logger.info("⏳ Waiting for dynamic content to load...")
+            logger.info("⏳ Waiting for React SPA to initialize...")
             await asyncio.sleep(10)
             
             # Check if there are any scripts or dynamic content loading
             scripts = await page.query_selector_all('script')
             logger.info(f"🔧 Found {len(scripts)} script tags on page")
+            
+            # Find and click the "Login / SignUp" button to open the modal
+            logger.info("🔍 Looking for 'Login / SignUp' button...")
+            login_found = False
+            
+            # The specific selector for the Login/SignUp button based on the HTML
+            login_btn_selectors = [
+                '.login-btn',
+                '[class*="login-btn"]',
+                'div:has-text("Login / ")',
+                'div:has-text("SignUp")',
+                'span:has-text("Login /")',
+            ]
+            
+            for selector in login_btn_selectors:
+                try:
+                    login_element = await page.query_selector(selector)
+                    if login_element:
+                        logger.info(f"🎯 Found login button with selector: {selector}")
+                        
+                        # Click the login button to open modal
+                        await login_element.click()
+                        logger.info("� Clicked login button - modal should appear")
+                        
+                        # Wait for modal to appear
+                        await asyncio.sleep(3)
+                        
+                        # Check if modal appeared by looking for modal-overlay
+                        modal = await page.query_selector('.modal-overlay')
+                        if modal:
+                            logger.info("✅ Login modal appeared!")
+                            login_found = True
+                            break
+                        else:
+                            logger.info("⚠️ Modal didn't appear, trying other selectors...")
+                            
+                except Exception as e:
+                    logger.debug(f"⚠️ Selector {selector} failed: {e}")
+            
+            # If still not found, try clicking any element containing "Login" text
+            if not login_found:
+                logger.info("🔄 Trying to find any element with Login text...")
+                try:
+                    # Use more specific text matching
+                    await page.click('text=Login / SignUp', timeout=5000)
+                    logger.info("� Clicked 'Login / SignUp' text")
+                    await asyncio.sleep(3)
+                    
+                    modal = await page.query_selector('.modal-overlay')
+                    if modal:
+                        logger.info("✅ Login modal appeared after text click!")
+                        login_found = True
+                except Exception as e:
+                    logger.debug(f"⚠️ Text click failed: {e}")
+            
+            # Alternative: try clicking the header area where the login button should be
+            if not login_found:
+                logger.info("🔄 Trying header area click...")
+                try:
+                    header = await page.query_selector('header.header-section')
+                    if header:
+                        # Look for any clickable element in header containing login-related text
+                        login_elements = await header.query_selector_all('div, span')
+                        for element in login_elements:
+                            text = await element.inner_text()
+                            if 'Login' in text or 'SignUp' in text:
+                                logger.info(f"🎯 Found login element in header: '{text}'")
+                                await element.click()
+                                await asyncio.sleep(3)
+                                
+                                modal = await page.query_selector('.modal-overlay')
+                                if modal:
+                                    logger.info("✅ Login modal appeared after header click!")
+                                    login_found = True
+                                    break
+                except Exception as e:
+                    logger.debug(f"⚠️ Header click failed: {e}")
             
             # Check for common loading indicators
             loading_indicators = ['loading', 'spinner', 'loader']
@@ -378,91 +491,148 @@ class GitHubActionsChecker:
                     except Exception as e:
                         logger.info(f"⚠️ Could not access iframe #{i+1}: {e}")
             
-            # Re-check for inputs in current context (main page or iframe)
-            final_inputs = await page.query_selector_all('input')
-            logger.info(f"📝 Final input count in current context: {len(final_inputs)}")
-            
-            # Find and fill phone number with multiple attempts
-            logger.info("📱 Looking for phone input field...")
+            # Log current URL after all attempts
+            current_url = page.url
+            logger.info(f"📍 Current URL after login attempts: {current_url}")
+            # Now that modal is open, look for phone input field specifically within the modal
+            logger.info("📱 Looking for phone input field within the modal...")
             phone_input = None
-            phone_selectors = [
-                'input[type="tel"]',
-                'input[name="phone"]',
-                'input[name="mobile"]',
-                'input[name="phoneNumber"]',
-                'input[placeholder*="phone" i]',
-                'input[placeholder*="mobile" i]',
-                'input[placeholder*="number" i]'
+            
+            # First, ensure we're working within the modal context
+            modal = await page.query_selector('.modal-overlay')
+            if not modal:
+                logger.error("❌ Modal overlay not found - cannot proceed with login")
+                await page.screenshot(path='data/modal_not_found.png')
+                return False
+            
+            logger.info("✅ Modal overlay found, looking for form elements...")
+            
+            # Based on the HTML structure, the phone input has specific attributes
+            modal_phone_selectors = [
+                '.modal-overlay input[id="mobile"]',  # Based on the HTML: <input ... id="mobile">
+                '.modal-overlay input[placeholder*="Mobile Number" i]',  # Placeholder: "Enter Your Mobile Number"
+                '.modal-overlay input[type="text"]',  # It's type="text" not "tel"
+                '.modal-overlay input[maxlength="10"]',  # Has maxlength="10"
+                '.modal-content input[id="mobile"]',
+                '.modal-content input',
+                '.contact-form input[id="mobile"]',
+                '.contact-form input',
+                'form input[id="mobile"]',
+                'input[id="mobile"]'  # Fallback to just the ID
             ]
             
-            for selector in phone_selectors:
+            for selector in modal_phone_selectors:
                 try:
                     phone_input = await page.wait_for_selector(selector, timeout=5000)
                     if phone_input:
-                        logger.info(f"✅ Found phone input: {selector}")
+                        logger.info(f"✅ Found phone input in modal: {selector}")
+                        
+                        # Verify it's the right input by checking attributes
+                        input_id = await phone_input.get_attribute('id')
+                        input_placeholder = await phone_input.get_attribute('placeholder')
+                        input_type = await phone_input.get_attribute('type')
+                        input_maxlength = await phone_input.get_attribute('maxlength')
+                        
+                        logger.info(f"📝 Input details - ID: '{input_id}', Placeholder: '{input_placeholder}', Type: '{input_type}', MaxLength: '{input_maxlength}'")
                         break
-                except Exception:
+                        
+                except Exception as e:
+                    logger.debug(f"⚠️ Modal selector {selector} failed: {e}")
                     continue
             
             if not phone_input:
-                logger.error("❌ Phone input field not found after trying all selectors")
+                logger.error("❌ Phone input field not found within modal")
                 
-                # Enhanced debugging - get page info
+                # Enhanced debugging - check what's in the modal
                 try:
-                    title = await page.title()
-                    url = page.url
-                    logger.error(f"📄 Current page - Title: '{title}', URL: '{url}'")
+                    modal_content = await modal.inner_html()
+                    logger.error("🔍 Modal content analysis:")
                     
-                    # Check what inputs are actually available
-                    all_inputs = await page.query_selector_all('input')
-                    logger.error(f"📝 Found {len(all_inputs)} input elements on page:")
+                    # Look for all inputs in modal
+                    modal_inputs = await modal.query_selector_all('input')
+                    logger.error(f"📝 Found {len(modal_inputs)} input elements in modal:")
                     
-                    for i, inp in enumerate(all_inputs[:10]):  # Limit to first 10
+                    for i, inp in enumerate(modal_inputs):
                         input_type = await inp.get_attribute('type') or 'no-type'
                         input_name = await inp.get_attribute('name') or 'no-name'
                         input_id = await inp.get_attribute('id') or 'no-id'
                         input_placeholder = await inp.get_attribute('placeholder') or 'no-placeholder'
-                        logger.error(f"  Input #{i+1}: type='{input_type}', name='{input_name}', id='{input_id}', placeholder='{input_placeholder}'")
+                        input_class = await inp.get_attribute('class') or 'no-class'
+                        logger.error(f"  Modal Input #{i+1}: type='{input_type}', name='{input_name}', id='{input_id}', placeholder='{input_placeholder}', class='{input_class}'")
                     
-                    # Save page content for analysis
-                    page_content = await page.content()
-                    with open('data/login_page_content.html', 'w', encoding='utf-8') as f:
-                        f.write(page_content)
-                    logger.error("💾 Page content saved to data/login_page_content.html")
+                    # Save modal content for analysis
+                    with open('data/modal_content.html', 'w', encoding='utf-8') as f:
+                        f.write(modal_content)
+                    logger.error("💾 Modal content saved to data/modal_content.html")
                     
                 except Exception as debug_e:
-                    logger.error(f"Debug info collection failed: {debug_e}")
+                    logger.error(f"Modal debug info collection failed: {debug_e}")
                 
                 # Take screenshot for debugging
-                await page.screenshot(path='data/login_debug.png')
-                logger.error("📸 Debug screenshot saved to data/login_debug.png")
+                await page.screenshot(path='data/modal_debug.png')
+                logger.error("📸 Debug screenshot saved to data/modal_debug.png")
                 return False
+            
+            if not phone_input:
+                logger.error("❌ Phone input field not found within modal")
                 
-            await phone_input.clear()
+                # Enhanced debugging - check what's in the modal
+                try:
+                    modal_content = await modal.inner_html()
+                    logger.error("� Modal content analysis:")
+                    
+                    # Look for all inputs in modal
+                    modal_inputs = await modal.query_selector_all('input')
+                    logger.error(f"📝 Found {len(modal_inputs)} input elements in modal:")
+                    
+                    for i, inp in enumerate(modal_inputs):
+                        input_type = await inp.get_attribute('type') or 'no-type'
+                        input_name = await inp.get_attribute('name') or 'no-name'
+                        input_id = await inp.get_attribute('id') or 'no-id'
+                        input_placeholder = await inp.get_attribute('placeholder') or 'no-placeholder'
+                        input_class = await inp.get_attribute('class') or 'no-class'
+                        logger.error(f"  Modal Input #{i+1}: type='{input_type}', name='{input_name}', id='{input_id}', placeholder='{input_placeholder}', class='{input_class}'")
+                    
+                    # Save modal content for analysis
+                    with open('data/modal_content.html', 'w', encoding='utf-8') as f:
+                        f.write(modal_content)
+                    logger.error("💾 Modal content saved to data/modal_content.html")
+                    
+                except Exception as debug_e:
+                    logger.error(f"Modal debug info collection failed: {debug_e}")
+                
+                # Take screenshot for debugging
+                await page.screenshot(path='data/modal_debug.png')
+                logger.error("📸 Debug screenshot saved to data/modal_debug.png")
+                return False
+            
+            # Clear and fill the phone input
+            await phone_input.fill("")  # Clear by filling with empty string
             # Remove +91 or other country codes as the site might add it automatically
             clean_phone = self.phone_number.replace('+91', '').replace('+', '').strip()
             await phone_input.fill(clean_phone)
             logger.info(f"📱 Phone number filled: {clean_phone}")
             await asyncio.sleep(2)
             
-            # Find and click send OTP button with multiple attempts
-            logger.info("🔍 Looking for Send OTP button...")
-            send_otp_selectors = [
-                'button:has-text("Send OTP")',
-                'button:has-text("Get OTP")',
-                'button:has-text("SEND OTP")',
-                'button:has-text("Submit")',
-                'button[type="submit"]',
-                'input[type="submit"]',
-                '.btn-primary',
-                '.otp-button',
-                'button.btn',
-                '[role="button"]:has-text("OTP")',
-                'a:has-text("Send")'
+            # Find and click send OTP button within the modal
+            logger.info("🔍 Looking for Send OTP button in modal...")
+            
+            # Based on the HTML, the button has class="custom-button" and value="Send OTP"
+            modal_otp_selectors = [
+                '.modal-overlay input[value="Send OTP"]',  # Specific to the HTML structure
+                '.modal-overlay .custom-button',  # The class mentioned in HTML
+                '.modal-overlay input[type="submit"]',  # It's an input type="submit"
+                '.modal-content input[value="Send OTP"]',
+                '.modal-content .custom-button',
+                '.contact-form input[type="submit"]',
+                '.contact-form .custom-button',
+                'form input[value="Send OTP"]',
+                '.modal-overlay button',  # Fallback to any button in modal
+                '.modal-content button'   # Fallback to any button in modal content
             ]
             
             otp_button = None
-            for selector in send_otp_selectors:
+            for selector in modal_otp_selectors:
                 try:
                     otp_button = await page.wait_for_selector(selector, timeout=3000)
                     if otp_button:
@@ -548,7 +718,7 @@ class GitHubActionsChecker:
                 await page.screenshot(path='data/otp_input_debug.png')
                 return False
             
-            await otp_input.clear()
+            await otp_input.fill("")  # Clear any existing content
             await otp_input.fill(otp_code)
             logger.info(f"🔢 OTP entered: {otp_code}")
             await asyncio.sleep(2)

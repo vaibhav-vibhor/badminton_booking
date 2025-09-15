@@ -223,7 +223,30 @@ Contributions are welcome! Areas for improvement:
 4. **Smart Scheduling**: ML-based optimal check timing
 5. **Mobile App**: Native mobile notifications
 
-## 📄 License
+## � Recent Updates & Fixes
+
+### ✅ SPA Login Issue Fixed (September 2025)
+
+**Problem**: The automation was failing with "phone input field not found" because the website uses a Single Page Application (SPA) with modal-based login.
+
+**Root Cause**: The script was trying to navigate to `/login` (which returns 404) instead of using the modal overlay system.
+
+**Solution Implemented**:
+1. **Navigate to main page**: `https://booking.gopichandacademy.com/` (not `/login`)
+2. **Click "Login / SignUp" button**: Opens modal overlay on same page
+3. **Wait for modal**: Look for `.modal-overlay` element
+4. **Find mobile input**: Use `#mobile` selector within modal context
+5. **Find OTP button**: Use `input[value="Send OTP"]` within modal
+
+**Key Changes**:
+- Updated `interactive_login()` to handle modal-based authentication
+- Added modal-specific selectors for phone input and OTP button
+- Enhanced debugging with modal content analysis
+- Added proper wait conditions for dynamic content loading
+
+If you're still experiencing issues, ensure you're using the latest version of the script.
+
+## �📄 License
 
 This project is for educational purposes. Please respect the terms of service of the booking website and use responsibly.
 
