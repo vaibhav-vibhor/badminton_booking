@@ -407,33 +407,64 @@ class GitHubActionsChecker:
                         if modal:
                             logger.info("✅ Login modal appeared!")
                             
+                            # DEBUGGING: Take screenshot of modal that appeared
+                            await page.screenshot(path='data/debug_modal_appeared.png')
+                            logger.info("📸 Debug: Screenshot saved - modal_appeared.png")
+                            
                             # Check if we got the Register modal instead of Login modal
                             # Look for "Register" title or "Login to your account" link
                             try:
+                                # Save modal HTML content for debugging
+                                modal_html = await modal.inner_html()
+                                with open('data/debug_modal_content.html', 'w', encoding='utf-8') as f:
+                                    f.write(modal_html)
+                                logger.info("💾 Debug: Modal HTML saved - modal_content.html")
+                                
                                 # Check if this is the register modal
                                 register_title = await modal.query_selector('text="Register"')
                                 login_link = await modal.query_selector('text="Login to your account"')
+                                
+                                # Also check for register-specific elements
+                                name_field = await modal.query_selector('input[placeholder*="Name" i]')
+                                email_field = await modal.query_selector('input[placeholder*="Email" i]')
+                                
+                                logger.info(f"🔍 Modal analysis:")
+                                logger.info(f"   Register title found: {register_title is not None}")
+                                logger.info(f"   Login link found: {login_link is not None}")
+                                logger.info(f"   Name field found: {name_field is not None}")
+                                logger.info(f"   Email field found: {email_field is not None}")
                                 
                                 if register_title and login_link:
                                     logger.info("📝 Register modal detected - need to switch to login")
                                     logger.info("🔗 Clicking 'Login to your account' link...")
                                     
+                                    # Take screenshot before clicking login link
+                                    await page.screenshot(path='data/debug_before_login_click.png')
+                                    logger.info("📸 Debug: Before clicking login link")
+                                    
                                     # Click the "Login to your account" red link
                                     await login_link.click()
-                                    await asyncio.sleep(2)
+                                    await asyncio.sleep(3)
+                                    
+                                    # Take screenshot after clicking login link
+                                    await page.screenshot(path='data/debug_after_login_click.png')
+                                    logger.info("📸 Debug: After clicking login link")
                                     
                                     logger.info("✅ Switched to login modal")
                                     
-                                elif register_title:
-                                    # Try alternative selectors for the login link
-                                    logger.info("📝 Register modal detected - looking for login link...")
+                                elif register_title or name_field or email_field:
+                                    # This is likely a register modal, try alternative selectors for the login link
+                                    logger.info("📝 Register modal detected - looking for login link with alternative selectors...")
+                                    
                                     login_link_selectors = [
                                         'text="Login to your account"',
                                         'a:has-text("Login to your account")',
                                         '[style*="color: red"]:has-text("Login")',
                                         '.text-red:has-text("Login")',
                                         'a[href*="login"]',
-                                        '*:has-text("Login to your account")'
+                                        '*:has-text("Login to your account")',
+                                        'a[style*="color"]',
+                                        '.login-link'
                                     ]
                                     
                                     link_clicked = False
@@ -442,8 +473,16 @@ class GitHubActionsChecker:
                                             link = await modal.query_selector(selector)
                                             if link:
                                                 logger.info(f"🔗 Found login link with selector: {selector}")
+                                                
+                                                # Take screenshot before click
+                                                await page.screenshot(path=f'data/debug_before_link_{selector.replace(":", "_").replace("*", "_").replace('"', "")[:10]}.png')
+                                                
                                                 await link.click()
-                                                await asyncio.sleep(2)
+                                                await asyncio.sleep(3)
+                                                
+                                                # Take screenshot after click
+                                                await page.screenshot(path=f'data/debug_after_link_{selector.replace(":", "_").replace("*", "_").replace('"', "")[:10]}.png')
+                                                
                                                 logger.info("✅ Switched to login modal")
                                                 link_clicked = True
                                                 break
@@ -453,14 +492,30 @@ class GitHubActionsChecker:
                                     if not link_clicked:
                                         logger.warning("⚠️ Could not find 'Login to your account' link")
                                         # Take screenshot for debugging
-                                        await page.screenshot(path='data/register_modal_debug.png')
-                                        logger.info("📸 Screenshot saved: register_modal_debug.png")
+                                        await page.screenshot(path='data/debug_register_modal_no_link.png')
+                                        logger.info("📸 Debug: Register modal but no login link found")
+                                        
+                                        # Log all clickable elements in modal for debugging
+                                        links = await modal.query_selector_all('a, button, [onclick], [style*="cursor"]')
+                                        logger.info(f"🔍 Found {len(links)} clickable elements in modal:")
+                                        for i, link in enumerate(links[:10]):  # Limit to first 10
+                                            try:
+                                                text = await link.inner_text()
+                                                tag = await link.evaluate('el => el.tagName')
+                                                logger.info(f"   Clickable {i+1}: {tag} - '{text[:50]}'")
+                                            except:
+                                                pass
                                 else:
                                     logger.info("✅ Login modal is already showing (not register modal)")
+                                    # Take screenshot to confirm
+                                    await page.screenshot(path='data/debug_login_modal_confirmed.png')
+                                    logger.info("📸 Debug: Confirmed login modal")
                                     
                             except Exception as e:
                                 logger.debug(f"Modal type detection failed: {e}")
                                 logger.info("🤷 Proceeding with assumption this is login modal")
+                                await page.screenshot(path='data/debug_modal_detection_error.png')
+                                logger.info("📸 Debug: Modal detection error")
                             
                             login_found = True
                             break
@@ -682,6 +737,10 @@ class GitHubActionsChecker:
                 actual_value = await phone_input.input_value()
                 logger.info(f"📱 Phone number re-filled. Final value: {actual_value}")
             
+            # DEBUGGING: Take screenshot after phone filling to see current modal state
+            await page.screenshot(path='data/debug_after_phone_fill.png')
+            logger.info("📸 Debug: After phone number filling")
+            
             await asyncio.sleep(2)
             
             # Find and click send OTP button within the modal
@@ -727,11 +786,19 @@ class GitHubActionsChecker:
             # Click send OTP with multiple strategies
             logger.info("📤 Clicking Send OTP button...")
             
+            # DEBUGGING: Take screenshot before OTP button click
+            await page.screenshot(path='data/debug_before_otp_click.png')
+            logger.info("📸 Debug: Before OTP button click")
+            
             try:
                 # Strategy 1: Regular click
                 await otp_button.click()
                 await asyncio.sleep(2)
                 logger.info("📤 Button clicked, checking for OTP request...")
+                
+                # DEBUGGING: Take screenshot after OTP button click
+                await page.screenshot(path='data/debug_after_otp_click.png')
+                logger.info("📸 Debug: After OTP button click")
                 
                 # Wait for some indication that OTP was sent (form changes, loading, etc.)
                 # Look for common indicators that OTP was sent
