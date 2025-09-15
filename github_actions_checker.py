@@ -612,6 +612,20 @@ class GitHubActionsChecker:
             clean_phone = self.phone_number.replace('+91', '').replace('+', '').strip()
             await phone_input.fill(clean_phone)
             logger.info(f"📱 Phone number filled: {clean_phone}")
+            
+            # Verify the phone number was actually filled
+            await asyncio.sleep(1)
+            actual_value = await phone_input.input_value()
+            if actual_value != clean_phone:
+                logger.warning(f"⚠️ Phone input verification failed. Expected: {clean_phone}, Actual: {actual_value}")
+                # Try filling again
+                await phone_input.fill("")
+                await asyncio.sleep(0.5)
+                await phone_input.fill(clean_phone)
+                await asyncio.sleep(1)
+                actual_value = await phone_input.input_value()
+                logger.info(f"📱 Phone number re-filled. Final value: {actual_value}")
+            
             await asyncio.sleep(2)
             
             # Find and click send OTP button within the modal
@@ -619,14 +633,15 @@ class GitHubActionsChecker:
             
             # Based on the HTML, the button has class="custom-button" and value="Send OTP"
             modal_otp_selectors = [
+                '.modal-overlay .custom-button',  # The class that actually exists (from debug)
+                '.modal-overlay input[type="submit"]',  # Generic submit button in modal
                 '.modal-overlay input[value="Send OTP"]',  # Specific to the HTML structure
-                '.modal-overlay .custom-button',  # The class mentioned in HTML
-                '.modal-overlay input[type="submit"]',  # It's an input type="submit"
-                '.modal-content input[value="Send OTP"]',
                 '.modal-content .custom-button',
+                '.modal-content input[type="submit"]',
                 '.contact-form input[type="submit"]',
                 '.contact-form .custom-button',
                 'form input[value="Send OTP"]',
+                'form .custom-button',
                 '.modal-overlay button',  # Fallback to any button in modal
                 '.modal-content button'   # Fallback to any button in modal content
             ]
@@ -634,7 +649,7 @@ class GitHubActionsChecker:
             otp_button = None
             for selector in modal_otp_selectors:
                 try:
-                    otp_button = await page.wait_for_selector(selector, timeout=3000)
+                    otp_button = await page.wait_for_selector(selector, timeout=5000)  # Increased timeout
                     if otp_button:
                         # Check if button is visible and enabled
                         is_visible = await otp_button.is_visible()
@@ -653,11 +668,50 @@ class GitHubActionsChecker:
                 await page.screenshot(path='data/otp_button_debug.png')
                 return False
             
-            # Click send OTP
+            # Click send OTP with multiple strategies
             logger.info("📤 Clicking Send OTP button...")
-            await otp_button.click()
-            logger.info("📤 OTP request sent")
-            await asyncio.sleep(5)  # Wait longer for OTP to be sent
+            
+            try:
+                # Strategy 1: Regular click
+                await otp_button.click()
+                await asyncio.sleep(2)
+                logger.info("📤 Button clicked, checking for OTP request...")
+                
+                # Wait for some indication that OTP was sent (form changes, loading, etc.)
+                # Look for common indicators that OTP was sent
+                otp_sent_indicators = [
+                    'text="OTP sent"',
+                    'text="Code sent"', 
+                    '[placeholder*="OTP" i]',
+                    '[placeholder*="code" i]',
+                    '.otp-input',
+                    'input[maxlength="4"]',
+                    'input[maxlength="6"]'
+                ]
+                
+                otp_sent = False
+                for indicator in otp_sent_indicators:
+                    try:
+                        await page.wait_for_selector(indicator, timeout=3000)
+                        logger.info(f"✅ OTP request confirmed - found indicator: {indicator}")
+                        otp_sent = True
+                        break
+                    except:
+                        continue
+                
+                if not otp_sent:
+                    # If no indicators found, assume OTP was sent successfully
+                    # This is a fallback for cases where the page doesn't provide clear feedback
+                    logger.info("ℹ️ No explicit OTP confirmation found, but button click completed")
+                    logger.info("🤞 Assuming OTP was sent successfully (fallback mode)")
+                    otp_sent = True
+                
+                logger.info("📤 OTP request sent - proceeding to wait for code")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to click OTP button: {e}")
+                await page.screenshot(path='data/otp_click_error.png')
+                return False
             
             # Send Telegram message asking for OTP
             otp_request_message = (
