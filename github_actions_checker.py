@@ -475,13 +475,14 @@ class GitHubActionsChecker:
                                                 logger.info(f"🔗 Found login link with selector: {selector}")
                                                 
                                                 # Take screenshot before click
-                                                await page.screenshot(path=f'data/debug_before_link_{selector.replace(":", "_").replace("*", "_").replace('"', "")[:10]}.png')
+                                                safe_selector = selector.replace(":", "_").replace("*", "_").replace('"', "")[:10]
+                                                await page.screenshot(path=f'data/debug_before_link_{safe_selector}.png')
                                                 
                                                 await link.click()
                                                 await asyncio.sleep(3)
                                                 
                                                 # Take screenshot after click
-                                                await page.screenshot(path=f'data/debug_after_link_{selector.replace(":", "_").replace("*", "_").replace('"', "")[:10]}.png')
+                                                await page.screenshot(path=f'data/debug_after_link_{safe_selector}.png')
                                                 
                                                 logger.info("✅ Switched to login modal")
                                                 link_clicked = True
