@@ -406,6 +406,62 @@ class GitHubActionsChecker:
                         modal = await page.query_selector('.modal-overlay')
                         if modal:
                             logger.info("✅ Login modal appeared!")
+                            
+                            # Check if we got the Register modal instead of Login modal
+                            # Look for "Register" title or "Login to your account" link
+                            try:
+                                # Check if this is the register modal
+                                register_title = await modal.query_selector('text="Register"')
+                                login_link = await modal.query_selector('text="Login to your account"')
+                                
+                                if register_title and login_link:
+                                    logger.info("📝 Register modal detected - need to switch to login")
+                                    logger.info("🔗 Clicking 'Login to your account' link...")
+                                    
+                                    # Click the "Login to your account" red link
+                                    await login_link.click()
+                                    await asyncio.sleep(2)
+                                    
+                                    logger.info("✅ Switched to login modal")
+                                    
+                                elif register_title:
+                                    # Try alternative selectors for the login link
+                                    logger.info("📝 Register modal detected - looking for login link...")
+                                    login_link_selectors = [
+                                        'text="Login to your account"',
+                                        'a:has-text("Login to your account")',
+                                        '[style*="color: red"]:has-text("Login")',
+                                        '.text-red:has-text("Login")',
+                                        'a[href*="login"]',
+                                        '*:has-text("Login to your account")'
+                                    ]
+                                    
+                                    link_clicked = False
+                                    for selector in login_link_selectors:
+                                        try:
+                                            link = await modal.query_selector(selector)
+                                            if link:
+                                                logger.info(f"🔗 Found login link with selector: {selector}")
+                                                await link.click()
+                                                await asyncio.sleep(2)
+                                                logger.info("✅ Switched to login modal")
+                                                link_clicked = True
+                                                break
+                                        except Exception as e:
+                                            logger.debug(f"Login link selector {selector} failed: {e}")
+                                    
+                                    if not link_clicked:
+                                        logger.warning("⚠️ Could not find 'Login to your account' link")
+                                        # Take screenshot for debugging
+                                        await page.screenshot(path='data/register_modal_debug.png')
+                                        logger.info("📸 Screenshot saved: register_modal_debug.png")
+                                else:
+                                    logger.info("✅ Login modal is already showing (not register modal)")
+                                    
+                            except Exception as e:
+                                logger.debug(f"Modal type detection failed: {e}")
+                                logger.info("🤷 Proceeding with assumption this is login modal")
+                            
                             login_found = True
                             break
                         else:
