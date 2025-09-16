@@ -17,38 +17,13 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# Load environment variables from .env file if running locally
-def load_env_file():
-    """Load environment variables from .env file if it exists"""
-    env_file = Path(__file__).parent / '.env'
-    
-    if env_file.exists():
-        try:
-            with open(env_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    
-                    # Skip comments and empty lines
-                    if not line or line.startswith('#'):
-                        continue
-                    
-                    # Parse KEY=VALUE format
-                    if '=' in line:
-                        key, value = line.split('=', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        
-                        # Remove quotes if present
-                        if value.startswith('"') and value.endswith('"'):
-                            value = value[1:-1]
-                        elif value.startswith("'") and value.endswith("'"):
-                            value = value[1:-1]
-                        
-                        # Set environment variable only if not already set
-                        if key not in os.environ:
-                            os.environ[key] = value
-        except Exception as e:
-            print(f"Warning: Failed to load .env file: {e}")
+# Import helper functions
+from src.checker_helpers import (
+    load_env_file, 
+    send_telegram_message, 
+    get_check_dates, 
+    format_results_message
+)
 
 # Load .env file on import
 load_env_file()
@@ -147,28 +122,8 @@ class GitHubActionsChecker:
             raise ValueError(error_msg)
     
     def send_telegram_message(self, message):
-        """Send message via Telegram"""
-        try:
-            url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
-            payload = {
-                'chat_id': self.chat_id,
-                'text': message,
-                'parse_mode': 'Markdown',
-                'disable_web_page_preview': True
-            }
-            
-            response = requests.post(url, json=payload, timeout=10)
-            
-            if response.status_code == 200:
-                logger.info("✅ Telegram message sent successfully")
-                return True
-            else:
-                logger.error(f"❌ Telegram send failed: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Telegram error: {e}")
-            return False
+        """Send message via Telegram using helper function"""
+        return send_telegram_message(self.telegram_token, self.chat_id, message)
 
     async def wait_for_otp_reply(self, timeout_minutes=5):
         """Wait for OTP reply from user via Telegram"""
@@ -228,25 +183,9 @@ class GitHubActionsChecker:
             return None
     
     def get_check_dates(self):
-        """Get next upcoming Friday and Monday"""
-        dates = []
-        today = datetime.now()
-        found_days = set()
-        
-        # Find the next upcoming Friday and Monday (one of each)
-        for i in range(1, 15):
-            check_date = today + timedelta(days=i)
-            weekday = check_date.strftime('%A').lower()
-            
-            if weekday in ['friday', 'monday'] and weekday not in found_days:
-                dates.append(check_date.strftime('%Y-%m-%d'))
-                found_days.add(weekday)
-                
-                # Stop once we have both
-                if len(found_days) == 2:
-                    break
-        
-        return sorted(dates)
+        """Get next upcoming Friday and Monday using helper function"""
+        dates_info = get_check_dates()
+        return [dates_info['friday']['date'], dates_info['monday']['date']]
     
     async def save_session(self, page):
         """Save session state with comprehensive validation"""
