@@ -71,6 +71,15 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     sys.exit(1)
 
+# Import API checker for hybrid approach
+try:
+    from src.api_checker import HybridBookingChecker, BadmintonAPIChecker
+    API_CHECKER_AVAILABLE = True
+    logger.info("✅ API checker module loaded")
+except ImportError as e:
+    logger.warning(f"⚠️ API checker not available: {e}")
+    API_CHECKER_AVAILABLE = False
+
 class GitHubActionsChecker:
     """Simplified checker for GitHub Actions"""
     
@@ -1634,7 +1643,7 @@ class GitHubActionsChecker:
         return table_text
     
     async def run_check(self):
-        """Main checking logic"""
+        """Main checking logic with hybrid API/browser approach"""
         logger.info("🏸 Starting badminton slot check...")
         
         # Debug: Check environment and file system
@@ -1654,6 +1663,48 @@ class GitHubActionsChecker:
         dates = self.get_check_dates()
         date_strs = [datetime.strptime(d, '%Y-%m-%d').strftime('%A %b %d') for d in dates]
         logger.info(f"📅 Checking dates: {' & '.join(date_strs)}")
+        
+        # HYBRID APPROACH: Try API first if available
+        if API_CHECKER_AVAILABLE:
+            logger.info("🚀 Attempting API-based approach first...")
+            try:
+                api_checker = BadmintonAPIChecker()
+                
+                # Try to load existing token
+                if api_checker.load_existing_token():
+                    logger.info("🔑 API token loaded, attempting API-based slot check...")
+                    
+                    # Verify token and get results
+                    if await api_checker.verify_token():
+                        api_results = await api_checker.check_all_academies(dates)
+                        
+                        if api_results and any(results for results in api_results.values()):
+                            # API approach successful!
+                            message = api_checker.format_results_for_telegram(api_results)
+                            self.send_telegram_message(message)
+                            
+                            # Count total slots for logging
+                            total_api_slots = 0
+                            for academy_slots in api_results.values():
+                                total_api_slots += sum(slot['available_slots'] for slot in academy_slots if slot['available'])
+                            
+                            logger.info(f"🎯 Total slots found via API: {total_api_slots}")
+                            logger.info("✅ API-based check completed successfully - no browser automation needed!")
+                            return
+                        else:
+                            logger.warning("⚠️ API returned no results - falling back to browser automation")
+                    else:
+                        logger.warning("❌ API token verification failed - falling back to browser automation")
+                else:
+                    logger.info("❌ No valid API token found - falling back to browser automation")
+                    
+            except Exception as e:
+                logger.error(f"❌ API approach failed: {e} - falling back to browser automation")
+        else:
+            logger.info("⚠️ API checker not available - using browser automation")
+        
+        # BROWSER AUTOMATION FALLBACK
+        logger.info("🌐 Using browser automation approach...")
         
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -1736,7 +1787,7 @@ class GitHubActionsChecker:
                 self.send_telegram_message(message)
                 
                 logger.info(f"🎯 Total slots found: {len(all_available_slots)}")
-                logger.info("✅ Check completed successfully")
+                logger.info("✅ Browser-based check completed successfully")
                 
             except Exception as e:
                 logger.error(f"❌ Check failed: {e}")
