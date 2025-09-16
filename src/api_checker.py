@@ -735,9 +735,9 @@ class BadmintonAPIChecker:
                         time_headers = time_headers[:max_columns]
                         sorted_time_slots = sorted_time_slots[:max_columns]
                     
-                    # Create header row with precise spacing for emoji alignment  
+                    # Create header row with precise centered alignment to match emojis
                     header = "```\n"
-                    header += "   " + "".join(f"{h:>6}" for h in time_headers) + "\n"
+                    header += "   " + "".join(f"{h:^6}" for h in time_headers) + "\n"
                     message_lines.append(header)
                     
                     # Create rows for each court
