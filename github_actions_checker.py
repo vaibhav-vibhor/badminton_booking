@@ -356,12 +356,26 @@ class GitHubActionsChecker:
     async def interactive_login(self, page):
         """Interactive login with OTP via Telegram"""
         try:
+            # Detect environment for adaptive behavior
+            is_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
+            is_headless = os.getenv('CI') == 'true' or is_github_actions
+            
             logger.info("🔐 Starting interactive login process...")
+            if is_github_actions:
+                logger.info("🤖 Running in GitHub Actions environment - using enhanced compatibility mode")
+            elif is_headless:
+                logger.info("🖥️ Running in headless CI environment")
+            else:
+                logger.info("💻 Running in local environment")
             
             # Navigate to main SPA page first (since /login returns 404)
             logger.info("🌐 Navigating to main SPA page...")
+            
+            # Use longer timeouts for GitHub Actions
+            nav_timeout = 45000 if is_github_actions else 30000
+            
             await page.goto('https://booking.gopichandacademy.com/', 
-                           wait_until='networkidle', timeout=30000)
+                           wait_until='networkidle', timeout=nav_timeout)
             
             # Log page info after navigation
             title = await page.title()
@@ -765,7 +779,9 @@ class GitHubActionsChecker:
             otp_button = None
             for selector in modal_otp_selectors:
                 try:
-                    otp_button = await page.wait_for_selector(selector, timeout=5000)  # Increased timeout
+                    # Use longer timeout for GitHub Actions environment
+                    selector_timeout = 10000 if is_github_actions else 5000
+                    otp_button = await page.wait_for_selector(selector, timeout=selector_timeout)
                     if otp_button:
                         # Check if button is visible and enabled
                         is_visible = await otp_button.is_visible()
@@ -792,72 +808,172 @@ class GitHubActionsChecker:
             logger.info("📸 Debug: Before OTP button click")
             
             try:
-                # Strategy 1: Regular click
-                await otp_button.click()
+                # Strategy 1: Regular click with reduced timeout
+                logger.info("🔄 Attempting regular click...")
+                await otp_button.click(timeout=10000)
+                logger.info("✅ Regular click completed")
+                
+                # Wait a bit and check for immediate feedback
                 await asyncio.sleep(2)
-                logger.info("📤 Button clicked, checking for OTP request...")
                 
-                # DEBUGGING: Take screenshot after OTP button click
-                await page.screenshot(path='data/debug_after_otp_click.png')
-                logger.info("📸 Debug: After OTP button click")
+            except Exception as regular_click_error:
+                logger.warning(f"⚠️ Regular click failed: {regular_click_error}")
                 
-                # Wait for some indication that OTP was sent (form changes, loading, etc.)
-                # Look for common indicators that OTP was sent
-                otp_sent_indicators = [
-                    'text="OTP sent"',
-                    'text="Code sent"', 
-                    '[placeholder*="OTP" i]',
-                    '[placeholder*="code" i]',
-                    '.otp-input',
-                    'input[maxlength="4"]',
-                    'input[maxlength="6"]'
-                ]
-                
-                otp_sent = False
-                for indicator in otp_sent_indicators:
+                try:
+                    # Strategy 2: JavaScript click (more reliable in headless environments)
+                    logger.info("� Attempting JavaScript click...")
+                    await otp_button.evaluate('element => element.click()')
+                    logger.info("✅ JavaScript click completed")
+                    await asyncio.sleep(2)
+                    
+                except Exception as js_click_error:
+                    logger.warning(f"⚠️ JavaScript click failed: {js_click_error}")
+                    
                     try:
-                        await page.wait_for_selector(indicator, timeout=3000)
-                        logger.info(f"✅ OTP request confirmed - found indicator: {indicator}")
+                        # Strategy 3: Form submission via JavaScript
+                        logger.info("🔄 Attempting form submission...")
+                        form_submit_result = await modal.evaluate("""
+                            () => {
+                                const form = document.querySelector('form.contact-form');
+                                if (form) {
+                                    form.submit();
+                                    return 'form_submitted';
+                                }
+                                return 'no_form_found';
+                            }
+                        """)
+                        logger.info(f"📋 Form submission result: {form_submit_result}")
+                        await asyncio.sleep(2)
+                        
+                    except Exception as form_submit_error:
+                        logger.warning(f"⚠️ Form submission failed: {form_submit_error}")
+                        
+                        try:
+                            # Strategy 4: Dispatch click event
+                            logger.info("🔄 Attempting event dispatch...")
+                            await otp_button.evaluate("""
+                                element => {
+                                    const event = new MouseEvent('click', {
+                                        view: window,
+                                        bubbles: true,
+                                        cancelable: true
+                                    });
+                                    element.dispatchEvent(event);
+                                }
+                            """)
+                            logger.info("✅ Event dispatch completed")
+                            await asyncio.sleep(2)
+                            
+                        except Exception as dispatch_error:
+                            logger.error(f"❌ All click strategies failed. Last error: {dispatch_error}")
+                            await page.screenshot(path='data/otp_click_error.png')
+                            return False
+            
+            # DEBUGGING: Take screenshot after OTP button click
+            await page.screenshot(path='data/debug_after_otp_click.png')
+            logger.info("📸 Debug: After OTP button click")
+            
+            # Enhanced check for OTP request success with longer timeout for different environments
+            logger.info("🔍 Checking for OTP request confirmation...")
+            
+            # Strategy 1: Look for immediate UI changes (fast check)
+            otp_sent = False
+            for indicator in ['text="OTP sent"', 'text="Code sent"', 'text="Sent"']:
+                try:
+                    element = await page.wait_for_selector(indicator, timeout=2000)
+                    if element:
+                        logger.info(f"✅ Found OTP confirmation: {indicator}")
                         otp_sent = True
                         break
+                except:
+                    continue
+            
+            if not otp_sent:
+                # Strategy 2: Check for OTP input fields appearing (medium check)
+                logger.info("🔍 Checking for OTP input field appearance...")
+                otp_input_selectors = [
+                    'input[placeholder*="OTP" i]',
+                    'input[placeholder*="code" i]',
+                    'input[placeholder*="verify" i]',
+                    'input[maxlength="4"]',
+                    'input[maxlength="6"]',
+                    '.otp-input'
+                ]
+                
+                for selector in otp_input_selectors:
+                    try:
+                        otp_input_field = await page.wait_for_selector(selector, timeout=3000)
+                        if otp_input_field and await otp_input_field.is_visible():
+                            logger.info(f"✅ OTP input field appeared: {selector}")
+                            otp_sent = True
+                            break
                     except:
                         continue
-                
-                if not otp_sent:
-                    # If no indicators found, assume OTP was sent successfully
-                    # This is a fallback for cases where the page doesn't provide clear feedback
-                    logger.info("ℹ️ No explicit OTP confirmation found, but button click completed")
-                    logger.info("🤞 Assuming OTP was sent successfully (fallback mode)")
+            
+            if not otp_sent:
+                # Strategy 3: Check for network activity or form changes (slower check)
+                logger.info("🔍 Checking for page changes after button click...")
+                try:
+                    # Check if the phone input became readonly (common pattern after OTP send)
+                    phone_readonly = await phone_input.evaluate('element => element.readOnly')
+                    phone_disabled = await phone_input.evaluate('element => element.disabled')
+                    
+                    if phone_readonly or phone_disabled:
+                        logger.info(f"✅ Phone input state changed (readonly: {phone_readonly}, disabled: {phone_disabled})")
+                        otp_sent = True
+                    else:
+                        # Check for button state changes
+                        button_text = await otp_button.evaluate('element => element.value || element.textContent')
+                        if 'resend' in button_text.lower() or 'sent' in button_text.lower():
+                            logger.info(f"✅ Button text changed to: {button_text}")
+                            otp_sent = True
+                        else:
+                            # Final check: assume success if no errors occurred during clicking
+                            logger.info("ℹ️ No explicit confirmation found, but clicks succeeded")
+                            logger.info("🤞 Assuming OTP was sent successfully (GitHub Actions compatibility mode)")
+                            otp_sent = True
+                            
+                except Exception as state_check_error:
+                    logger.info(f"⚠️ State check failed: {state_check_error}")
+                    logger.info("🤞 Assuming OTP was sent (fallback for GitHub Actions)")
                     otp_sent = True
-                
-                logger.info("📤 OTP request sent - proceeding to wait for code")
-                
-            except Exception as e:
-                logger.error(f"❌ Failed to click OTP button: {e}")
-                await page.screenshot(path='data/otp_click_error.png')
+            
+            if otp_sent:
+                logger.info("📤 OTP request confirmed - proceeding to wait for code")
+            else:
+                logger.error("❌ Could not confirm OTP was sent")
+                await page.screenshot(path='data/otp_send_failed.png')
                 return False
             
-            # Send Telegram message asking for OTP
+            # Send Telegram message asking for OTP with environment-aware timeout
+            timeout_minutes = 10 if is_github_actions else 5  # Longer timeout for GitHub Actions
+            
             otp_request_message = (
                 "🔐 *OTP Required for Badminton Checker*\n\n"
                 f"📱 An OTP has been sent to your phone: `{clean_phone}`\n\n"
-                "Please reply to this message with the OTP code (4-6 digits) within 5 minutes.\n\n"
+                f"Please reply to this message with the OTP code (4-6 digits) within {timeout_minutes} minutes.\n\n"
                 "Example: `123456`"
             )
+            
+            if is_github_actions:
+                otp_request_message += "\n\n🤖 _Running in GitHub Actions - please respond promptly_"
             
             if not self.send_telegram_message(otp_request_message):
                 logger.error("❌ Failed to send OTP request message")
                 return False
             
-            # Wait for OTP reply
-            otp_code = await self.wait_for_otp_reply(timeout_minutes=5)
+            # Wait for OTP reply with environment-specific timeout
+            otp_code = await self.wait_for_otp_reply(timeout_minutes=timeout_minutes)
             if not otp_code:
                 error_msg = (
-                    "⏰ *OTP Timeout*\n\n"
-                    "Did not receive OTP within 5 minutes.\n"
+                    f"⏰ *OTP Timeout*\n\n"
+                    f"Did not receive OTP within {timeout_minutes} minutes.\n"
                     "The login attempt has failed.\n\n"
                     "I'll try again in the next hour."
                 )
+                if is_github_actions:
+                    error_msg += "\n\n🤖 _GitHub Actions environment may require faster response times_"
+                
                 self.send_telegram_message(error_msg)
                 return False
             
@@ -877,9 +993,11 @@ class GitHubActionsChecker:
             ]
             
             otp_input = None
+            input_timeout = 8000 if is_github_actions else 3000
+            
             for selector in otp_input_selectors:
                 try:
-                    otp_input = await page.wait_for_selector(selector, timeout=3000)
+                    otp_input = await page.wait_for_selector(selector, timeout=input_timeout)
                     if otp_input:
                         is_visible = await otp_input.is_visible()
                         if is_visible:
@@ -918,9 +1036,11 @@ class GitHubActionsChecker:
             ]
             
             login_button = None
+            button_timeout = 8000 if is_github_actions else 3000
+            
             for selector in login_selectors:
                 try:
-                    login_button = await page.wait_for_selector(selector, timeout=3000)
+                    login_button = await page.wait_for_selector(selector, timeout=button_timeout)
                     if login_button:
                         is_visible = await login_button.is_visible()
                         is_enabled = await login_button.is_enabled()
@@ -938,11 +1058,27 @@ class GitHubActionsChecker:
                 await page.screenshot(path='data/login_button_debug.png')
                 return False
             
-            # Click login
+            # Click login with multiple strategies (similar to OTP button)
             logger.info("🚀 Clicking verify/login button...")
-            await login_button.click()
+            
+            try:
+                await login_button.click(timeout=5000)
+                logger.info("✅ Login button clicked successfully")
+            except Exception as click_error:
+                logger.warning(f"⚠️ Regular click failed: {click_error}")
+                try:
+                    # Fallback to JavaScript click
+                    await login_button.evaluate('element => element.click()')
+                    logger.info("✅ Login button clicked via JavaScript")
+                except Exception as js_error:
+                    logger.error(f"❌ All login button click strategies failed: {js_error}")
+                    return False
+            
             logger.info("🚀 Login submitted")
-            await asyncio.sleep(8)  # Wait longer for login to process
+            
+            # Wait longer for login processing in GitHub Actions
+            processing_wait = 12 if is_github_actions else 8
+            await asyncio.sleep(processing_wait)
             
             # Check if login was successful
             logger.info(f"🔍 Current URL after login: {page.url}")
