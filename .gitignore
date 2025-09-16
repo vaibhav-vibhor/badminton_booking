@@ -45,3 +45,11 @@ data/*.json
 # Test outputs
 test-results/
 screenshots/
+
+# Temporary test files
+test_*.py
+debug_*.py
+*_test.py
+*_debug.py
+analyze_*.py
+setup_*.py
