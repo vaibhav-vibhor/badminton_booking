@@ -718,7 +718,7 @@ class BadmintonAPIChecker:
                     sorted_time_slots = sorted(all_time_slots_set, key=time_sort_key)
                     
                     # Create table header with time slots
-                    # Use 24h format for display
+                    # Use simple ASCII format for perfect monospace alignment
                     def format_time_for_header(time_slot):
                         try:
                             start_time = time_slot.split('-')[0]
@@ -735,9 +735,16 @@ class BadmintonAPIChecker:
                         time_headers = time_headers[:max_columns]
                         sorted_time_slots = sorted_time_slots[:max_columns]
                     
-                    # Create header row with precise centered alignment to match emojis
+                    # Create header row with precise alignment
                     header = "```\n"
-                    header += "   " + "".join(f"{h:^6}" for h in time_headers) + "\n"
+                    # Standard 3-character offset to match court column (no extra spaces)
+                    header += "   "  # 3 character offset to match court column
+                    
+                    # Each time column is exactly 6 characters wide, center the time headers
+                    for h in time_headers:
+                        header += f"{h:^6}"
+                    
+                    header += "\n"  # Single line break
                     message_lines.append(header)
                     
                     # Create rows for each court
@@ -752,12 +759,12 @@ class BadmintonAPIChecker:
                         for time_slot in sorted_time_slots:
                             if time_slot in all_slots:
                                 is_available = all_slots[time_slot]['available']
-                                symbol = "✅" if is_available else "❌"
+                                symbol = "✓" if is_available else "•"  # ASCII tick and dot
                                 if is_available:
                                     date_available_count += 1
                             else:
                                 symbol = "-"
-                            # Center emoji in fixed 6-character column
+                            # Center symbol in fixed 6-character column
                             row += f"{symbol:^6}"
                         
                         court_rows.append(row)
@@ -777,8 +784,12 @@ class BadmintonAPIChecker:
                 message_lines.append(f"\n🎯 *Total: {total_available_slots} slots*")
             else:
                 message_lines.append(f"\n❌ *No slots currently available*")
-                
-            message_lines.append(f"⚡ *Via API* - {datetime.now().strftime('%H:%M')}")
+            
+            # Detect environment and add indicator
+            is_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
+            env_indicator = "🤖 *GitHub Actions*" if is_github_actions else "💻 *Local Run*"
+            
+            message_lines.append(f"⚡ *Via API* - {datetime.now().strftime('%H:%M')} - {env_indicator}")
             
             return "\n".join(message_lines)
             
