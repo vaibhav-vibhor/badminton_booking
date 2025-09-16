@@ -126,11 +126,69 @@ class BadmintonAPIChecker:
             logger.info("🔐 Authentication headers set")
     
     async def verify_token(self) -> bool:
-        """Verify if the current token is still valid"""
+        """
+        Verify if the current login token is still valid using the Profile API
+        
+        Returns:
+            True if token is valid, False otherwise
+        """
+        if not self.login_token:
+            logger.info("❌ No token to verify")
+            return False
+            
         try:
-            if not self.login_token:
-                logger.info("❌ No token to verify")
+            # Use the REAL profile endpoint to verify token
+            endpoint = f"{self.api_base}/Customer/Data/Get/Profile"
+            
+            headers = {
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Connection': 'keep-alive',
+                'LoginToken': self.login_token,  # This is the key authentication method!
+                'Origin': 'https://booking.gopichandacademy.com',
+                'Referer': 'https://booking.gopichandacademy.com/',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-site',
+                'Sec-GPC': '1',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+                'sec-ch-ua': '"Chromium";v="140", "Not=A?Brand";v="24", "Brave";v="140"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
+            }
+            
+            logger.info("🔐 Verifying login token using Profile API...")
+            
+            response = self.session.get(endpoint, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    if data.get('Status') == 'Success':
+                        user_info = data.get('Result', {})
+                        user_name = user_info.get('name', 'Unknown')
+                        user_mobile = user_info.get('mobile', 'Unknown')
+                        logger.info(f"✅ Token valid! User: {user_name} ({user_mobile})")
+                        return True
+                    else:
+                        logger.warning(f"❌ Token verification failed: {data.get('Message')}")
+                        return False
+                except json.JSONDecodeError:
+                    logger.error("❌ Invalid JSON response from profile API")
+                    return False
+            elif response.status_code == 401:
+                logger.warning("❌ Token expired or invalid (401)")
                 return False
+            else:
+                logger.warning(f"❌ Profile API returned status {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Network error verifying token: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error verifying token: {e}")
+            return False
                 
             self.set_auth_headers()
             
@@ -543,8 +601,15 @@ class BadmintonAPIChecker:
         """
         results = {}
         
-        # Skip token verification since the Calendar API works without auth
-        logger.info("🚀 Using Calendar API (no authentication required)")
+        # Try to verify token if we have one (for authenticated APIs later)
+        if self.login_token:
+            logger.info("� Verifying authentication token...")
+            if await self.verify_token():
+                logger.info("✅ Token verified - can use authenticated APIs")
+            else:
+                logger.warning("⚠️ Token verification failed - using public APIs only")
+        else:
+            logger.info("🔓 No token available - using public Calendar API")
         
         logger.info(f"🏸 Checking {len(self.academies)} academies for {len(dates)} dates using API...")
         
