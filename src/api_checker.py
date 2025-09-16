@@ -392,6 +392,7 @@ class BadmintonAPIChecker:
                 # Parse available slots - format: "12:00-13:00|1|405"
                 # Where: time_slot|availability(1=available,0=booked)|price
                 available_times = []
+                all_time_slots = {}  # Store all slots with their availability status
                 total_available = 0
                 
                 for slot_str in available_slots:
@@ -401,6 +402,12 @@ class BadmintonAPIChecker:
                             time_slot = parts[0]
                             is_available = parts[1] == '1'
                             price = parts[2]
+                            
+                            # Store all time slots with their status
+                            all_time_slots[time_slot] = {
+                                'available': is_available,
+                                'price': price
+                            }
                             
                             if is_available:
                                 available_times.append(time_slot)
@@ -419,7 +426,8 @@ class BadmintonAPIChecker:
                     'date': date,
                     'available': total_available > 0,
                     'available_slots': total_available,
-                    'time_slots': available_times
+                    'time_slots': available_times,  # For backward compatibility
+                    'all_time_slots': all_time_slots  # New: all slots with status
                 }
                 
                 slots.append(slot_entry)
@@ -639,35 +647,27 @@ class BadmintonAPIChecker:
     
     def format_results_for_telegram(self, results: Dict[str, List[Dict]]) -> str:
         """
-        Format API results for Telegram message
-        Same format as browser automation for consistency
+        Format API results for Telegram message with detailed table format
+        Shows courts as rows and time slots as columns with ✓/✗ symbols
         """
         try:
             if not results or not any(results.values()):
                 return "❌ No slots found via API"
-            
+
             message_lines = ["🏸 *Badminton Slots Available* (API)"]
-            total_slots = 0
+            total_available_slots = 0
             
             for academy_name, slots in results.items():
                 if not slots:
                     continue
                     
-                available_slots = [slot for slot in slots if slot['available']]
-                if not available_slots:
-                    continue
-                
-                # Count total available slots for this academy
-                academy_total = sum(slot['available_slots'] for slot in available_slots)
-                total_slots += academy_total
-                
                 # Create academy header
                 short_name = academy_name.replace("Pullela Gopichand Badminton Academy", "Pullela").replace("SAI ", "")
                 message_lines.append(f"\n📍 *{short_name}*")
                 
                 # Group by date
                 dates_data = {}
-                for slot in available_slots:
+                for slot in slots:
                     date = slot['date']
                     if date not in dates_data:
                         dates_data[date] = []
@@ -683,13 +683,100 @@ class BadmintonAPIChecker:
                     
                     message_lines.append(f"  📅 {formatted_date}")
                     
+                    # Collect all time slots from all courts for this date
+                    all_time_slots_set = set()
+                    for slot in date_slots:
+                        if 'all_time_slots' in slot:
+                            all_time_slots_set.update(slot['all_time_slots'].keys())
+                    
+                    if not all_time_slots_set:
+                        # Fallback to old format if no detailed data
+                        for slot in date_slots:
+                            court_name = slot['court_name']
+                            available = slot['available_slots']
+                            if available > 0:
+                                message_lines.append(f"    ✅ {court_name}: {available} slots")
+                        continue
+                    
+                    # Sort time slots (convert to 24h format for sorting)
+                    def time_sort_key(time_slot):
+                        try:
+                            # Extract start time from "12:00-13:00" format
+                            start_time = time_slot.split('-')[0]
+                            hour, minute = start_time.split(':')
+                            return int(hour) * 100 + int(minute)
+                        except:
+                            return 9999
+                    
+                    sorted_time_slots = sorted(all_time_slots_set, key=time_sort_key)
+                    
+                    # Create table header with time slots
+                    # Convert 24h format to 12h format for display
+                    def format_time_for_header(time_slot):
+                        try:
+                            start_time = time_slot.split('-')[0]
+                            hour = int(start_time.split(':')[0])
+                            if hour == 0:
+                                return "12a"
+                            elif hour < 12:
+                                return f"{hour}h"
+                            elif hour == 12:
+                                return "12p"
+                            else:
+                                return f"{hour-12}h"
+                        except:
+                            return time_slot[:2]
+                    
+                    time_headers = [format_time_for_header(slot) for slot in sorted_time_slots]
+                    
+                    # Limit to reasonable number of columns (Telegram width limit)
+                    max_columns = 8
+                    if len(time_headers) > max_columns:
+                        time_headers = time_headers[:max_columns]
+                        sorted_time_slots = sorted_time_slots[:max_columns]
+                    
+                    # Create header row
+                    header = "```\n"
+                    header += "    " + "".join(f"{h:>4}" for h in time_headers) + "\n"
+                    message_lines.append(header)
+                    
+                    # Create rows for each court
+                    court_rows = []
+                    date_available_count = 0
+                    
                     for slot in date_slots:
                         court_name = slot['court_name']
-                        available = slot['available_slots']
-                        message_lines.append(f"    ✅ {court_name}: {available} slots")
+                        all_slots = slot.get('all_time_slots', {})
+                        
+                        row = f"{court_name:>3}"
+                        for time_slot in sorted_time_slots:
+                            if time_slot in all_slots:
+                                is_available = all_slots[time_slot]['available']
+                                symbol = " ✓ " if is_available else " ✗ "
+                                if is_available:
+                                    date_available_count += 1
+                            else:
+                                symbol = " - "
+                            row += f"{symbol:>4}"
+                        
+                        court_rows.append(row)
+                    
+                    # Add court rows
+                    for row in court_rows:
+                        message_lines.append(row)
+                    
+                    message_lines.append("```")
+                    
+                    total_available_slots += date_available_count
+                    if date_available_count > 0:
+                        message_lines.append(f"    📊 {date_available_count} slots available")
             
             # Add total
-            message_lines.append(f"\n🎯 *Total: {total_slots} slots*")
+            if total_available_slots > 0:
+                message_lines.append(f"\n🎯 *Total: {total_available_slots} slots*")
+            else:
+                message_lines.append(f"\n❌ *No slots currently available*")
+                
             message_lines.append(f"⚡ *Via API* - {datetime.now().strftime('%H:%M')}")
             
             return "\n".join(message_lines)
