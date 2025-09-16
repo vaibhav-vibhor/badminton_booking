@@ -1236,6 +1236,7 @@ class GitHubActionsChecker:
         if has_any_slots:
             message = f"🏸 *SLOTS AVAILABLE!*\n\n"
             message += f"🎯 Found {len(all_slots)} available slots!\n\n"
+            message += f"*Legend:* ✓ = Available, ✗ = Booked\n\n"
         else:
             message = f"🏸 *Badminton Checker Update*\n\n"
             message += f"😔 No slots available\n\n"
@@ -1273,26 +1274,30 @@ class GitHubActionsChecker:
         return message
     
     def create_academy_table(self, academy_short, academy_slots):
-        """Create a table format for an academy's available slots"""
+        """Create a compact table format for an academy's available slots"""
         # Define academy-specific configurations based on actual data patterns
         academy_configs = {
             'Kotak': {
                 'courts': list(range(1, 7)),  # Courts 1-6
-                'time_slots': ['12:00-13:00', '13:00-14:00', '18:00-19:00', '19:00-20:00', '20:00-21:00', '21:00-22:00']
+                'time_slots': ['12:00-13:00', '13:00-14:00', '18:00-19:00', '19:00-20:00', '20:00-21:00', '21:00-22:00'],
+                'time_labels': ['12h', '13h', '18h', '19h', '20h', '21h']  # Compact labels
             },
             'Pullela': {
-                'courts': list(range(1, 9)),  # Courts 1-8 (includes court 4 as seen in data)
-                'time_slots': ['12:00-13:00', '13:00-14:00', '19:00-20:00', '20:00-21:00', '21:00-22:00']
+                'courts': list(range(1, 9)),  # Courts 1-8 
+                'time_slots': ['12:00-13:00', '13:00-14:00', '19:00-20:00', '20:00-21:00', '21:00-22:00'],
+                'time_labels': ['12h', '13h', '19h', '20h', '21h']
             },
             'SAI': {
                 'courts': list(range(1, 10)),  # Courts 1-9
-                'time_slots': ['12:00-13:00', '13:00-14:00', '19:00-20:00', '20:00-21:00', '21:00-22:00']
+                'time_slots': ['12:00-13:00', '13:00-14:00', '19:00-20:00', '20:00-21:00', '21:00-22:00'],
+                'time_labels': ['12h', '13h', '19h', '20h', '21h']
             }
         }
         
         config = academy_configs.get(academy_short, {})
         courts = config.get('courts', [])
         time_slots = config.get('time_slots', [])
+        time_labels = config.get('time_labels', [])
         
         # Create set of available court-time combinations
         available_slots = set()
@@ -1304,27 +1309,26 @@ class GitHubActionsChecker:
             if court_number:
                 available_slots.add((int(court_number), time))
         
-        # Build the table
+        # Build compact table using shorter format
         table_text = f"🏟️ *{academy_short}*\n"
-        table_text += f"`{'Court':<6}"
         
-        # Header with time slots (abbreviated for better formatting)
-        for time_slot in time_slots:
-            start_time = time_slot.split('-')[0]  # Get just the start time like "12:00"
-            table_text += f"{start_time:>8}"
+        # Use a more compact format with fixed-width cells
+        table_text += "`C "  # Court column header (shortened)
+        for label in time_labels:
+            table_text += f"{label:>4}"  # 4 characters per time slot
         table_text += "`\n"
         
         # Separator line
-        table_text += "`" + "-" * (6 + len(time_slots) * 8) + "`\n"
+        table_text += "`" + "-" * (2 + len(time_labels) * 4) + "`\n"
         
-        # Rows for each court
+        # Rows for each court (more compact)
         for court in courts:
-            table_text += f"`{court:<6}"
-            for time_slot in time_slots:
+            table_text += f"`{court} "
+            for i, time_slot in enumerate(time_slots):
                 if (court, time_slot) in available_slots:
-                    table_text += f"{'✓':>8}"  # Available
+                    table_text += f"{'✓':>4}"  # Available
                 else:
-                    table_text += f"{'✗':>8}"  # Not available
+                    table_text += f"{'✗':>4}"  # Not available
             table_text += "`\n"
         
         return table_text
