@@ -1222,7 +1222,7 @@ class GitHubActionsChecker:
                 f"All courts are currently booked."
             )
         
-        # Group results
+        # Group results by date
         slots_by_date = {}
         for slot in all_slots:
             date = slot['date']
@@ -1230,26 +1230,41 @@ class GitHubActionsChecker:
                 slots_by_date[date] = []
             slots_by_date[date].append(slot)
         
-        message = f"🏸 *SLOTS AVAILABLE!*\n\n"
-        message += f"🎯 Found {len(all_slots)} available slots!\n\n"
+        # Determine if we have any slots at all
+        has_any_slots = len(all_slots) > 0
         
-        for date, slots in sorted(slots_by_date.items()):
+        if has_any_slots:
+            message = f"🏸 *SLOTS AVAILABLE!*\n\n"
+            message += f"🎯 Found {len(all_slots)} available slots!\n\n"
+        else:
+            message = f"🏸 *Badminton Checker Update*\n\n"
+            message += f"😔 No slots available\n\n"
+        
+        # Check each date (both those with and without slots)
+        for date in sorted(dates):
             date_obj = datetime.strptime(date, '%Y-%m-%d')
             formatted_date = date_obj.strftime('%A, %B %d')
             message += f"📅 *{formatted_date}*\n"
             
-            # Group by academy
-            by_academy = {}
-            for slot in slots:
-                academy = slot['academy']
-                if academy not in by_academy:
-                    by_academy[academy] = []
-                by_academy[academy].append(f"{slot['court']} at {slot['time']}")
-            
-            for academy, slot_list in by_academy.items():
-                message += f"   🏟️ *{academy}*\n"
-                for slot_detail in slot_list:
-                    message += f"      🏸 {slot_detail}\n"
+            if date in slots_by_date:
+                # This date has slots
+                slots = slots_by_date[date]
+                
+                # Group by academy
+                by_academy = {}
+                for slot in slots:
+                    academy = slot['academy']
+                    if academy not in by_academy:
+                        by_academy[academy] = []
+                    by_academy[academy].append(f"{slot['court']} at {slot['time']}")
+                
+                for academy, slot_list in by_academy.items():
+                    message += f"   🏟️ *{academy}*\n"
+                    for slot_detail in slot_list:
+                        message += f"      🏸 {slot_detail}\n"
+            else:
+                # This date has no slots
+                message += f"   😔 No slots available for this date\n"
             
             message += "\n"
         
