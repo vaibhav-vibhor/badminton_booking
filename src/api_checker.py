@@ -6,7 +6,7 @@ Provides a more reliable alternative to browser automation
 import requests
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple, Any
 import asyncio
 import os
@@ -789,7 +789,11 @@ class BadmintonAPIChecker:
             is_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
             env_indicator = "🤖 *GitHub Actions*" if is_github_actions else "💻 *Local Run*"
             
-            message_lines.append(f"⚡ *Via API* - {datetime.now().strftime('%H:%M')} - {env_indicator}")
+            # Add timestamp with IST timezone
+            ist_timezone = timezone(timedelta(hours=5, minutes=30))  # IST is UTC+5:30
+            current_time_ist = datetime.now(ist_timezone).strftime('%H:%M')
+            
+            message_lines.append(f"⚡ *Via API* - {current_time_ist} IST - {env_indicator}")
             
             return "\n".join(message_lines)
             
