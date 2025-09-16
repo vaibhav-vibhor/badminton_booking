@@ -683,6 +683,13 @@ class BadmintonAPIChecker:
                     
                     message_lines.append(f"  📅 {formatted_date}")
                     
+                    # Check if there are any available slots for this date
+                    date_has_available_slots = any(slot.get('available', False) for slot in date_slots)
+                    
+                    if not date_has_available_slots:
+                        message_lines.append(f"    ❌ No slots available")
+                        continue
+                    
                     # Collect all time slots from all courts for this date
                     all_time_slots_set = set()
                     for slot in date_slots:
@@ -711,19 +718,12 @@ class BadmintonAPIChecker:
                     sorted_time_slots = sorted(all_time_slots_set, key=time_sort_key)
                     
                     # Create table header with time slots
-                    # Convert 24h format to 12h format for display
+                    # Use 24h format for display
                     def format_time_for_header(time_slot):
                         try:
                             start_time = time_slot.split('-')[0]
                             hour = int(start_time.split(':')[0])
-                            if hour == 0:
-                                return "12a"
-                            elif hour < 12:
-                                return f"{hour}h"
-                            elif hour == 12:
-                                return "12p"
-                            else:
-                                return f"{hour-12}h"
+                            return f"{hour:02d}h"
                         except:
                             return time_slot[:2]
                     
