@@ -21,7 +21,7 @@ class BadmintonAPIChecker:
     
     def __init__(self):
         self.base_url = "https://booking.gopichandacademy.com"
-        self.api_base = "https://booking.gopichandacademy.com/API"
+        self.api_base = "https://adminbooking.gopichandacademy.com/API"  # Updated to actual API base!
         self.session = requests.Session()
         self.login_token = None
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -219,7 +219,7 @@ class BadmintonAPIChecker:
     
     async def get_venue_slots(self, venue_id: int, date: str) -> Optional[List[Dict]]:
         """
-        Get available slots for a venue on a specific date
+        Get available slots for a venue on a specific date using the real API endpoint
         
         Args:
             venue_id: Academy venue ID (1, 2, or 3)
@@ -230,90 +230,149 @@ class BadmintonAPIChecker:
         """
         try:
             if not self.login_token:
-                logger.error("❌ No authentication token available")
+                logger.warning("⚠️ No authentication token - trying without auth...")
+                
+            # Use the ACTUAL API endpoint discovered from curl
+            endpoint = f"{self.api_base}/Get/Calender"
+            params = {
+                'venue_id': venue_id,
+                'date': date
+            }
+            
+            # Set up headers similar to the curl request
+            headers = {
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Connection': 'keep-alive',
+                'Origin': 'https://booking.gopichandacademy.com',
+                'Referer': 'https://booking.gopichandacademy.com/',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-site',
+                'Sec-GPC': '1',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+                'sec-ch-ua': '"Chromium";v="140", "Not=A?Brand";v="24", "Brave";v="140"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
+            }
+            
+            logger.info(f"📡 Fetching slots for venue {venue_id} on {date} using REAL API...")
+            logger.debug(f"🔗 URL: {endpoint}?venue_id={venue_id}&date={date}")
+            
+            response = self.session.get(endpoint, params=params, headers=headers, timeout=15)
+            
+            logger.debug(f"📊 Response: {response.status_code}")
+            
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    logger.info(f"✅ Got API response: {len(str(data))} characters")
+                    
+                    # Parse the REAL response format
+                    slots = self.parse_calendar_api_response(data, date)
+                    if slots:
+                        logger.info(f"🎯 Successfully parsed {len(slots)} courts with slots!")
+                        return slots
+                    else:
+                        logger.warning("⚠️ No slots found in API response")
+                        return []
+                        
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ JSON decode error: {e}")
+                    logger.debug(f"Response text: {response.text[:500]}")
+                    return None
+                    
+            elif response.status_code == 401:
+                logger.warning("❌ Authentication failed - token may be expired")
+                return None
+            else:
+                logger.warning(f"❌ API call failed with status {response.status_code}")
+                logger.debug(f"Response: {response.text[:200]}")
                 return None
                 
-            self.set_auth_headers()
-            
-            # Try different API endpoint patterns based on common SPA structures
-            endpoint_patterns = [
-                # REST API patterns
-                f"{self.api_base}/venues/{venue_id}/slots",
-                f"{self.api_base}/venues/{venue_id}/availability", 
-                f"{self.api_base}/booking/venues/{venue_id}",
-                f"{self.api_base}/venues/{venue_id}",
-                # GraphQL-like patterns
-                f"{self.api_base}/query/venues/{venue_id}",
-                # Direct patterns (what browser might use)
-                f"{self.base_url}/venue-details/{venue_id}",
-                f"{self.base_url}/booking/venue/{venue_id}",
-                # Alternative API structures
-                f"{self.base_url}/api/venues/{venue_id}/slots",
-                f"{self.base_url}/api/booking/venues/{venue_id}",
-            ]
-            
-            # Parameters to try
-            params_variations = [
-                {'date': date},
-                {'date': date, 'timestamp': int(datetime.now().timestamp())},
-                {'selectedDate': date},
-                {'checkDate': date},
-                {},  # No params
-            ]
-            
-            logger.info(f"📡 Trying to fetch slots for venue {venue_id} on {date}...")
-            
-            for endpoint in endpoint_patterns:
-                for params in params_variations:
-                    try:
-                        logger.debug(f"🔍 Trying: {endpoint} with params: {params}")
-                        
-                        response = self.session.get(endpoint, params=params, timeout=15)
-                        
-                        logger.debug(f"📊 Response: {response.status_code} from {endpoint}")
-                        
-                        if response.status_code == 200:
-                            try:
-                                data = response.json()
-                                logger.info(f"✅ Got data from {endpoint}: {len(str(data))} characters")
-                                
-                                # Try to parse slots from response
-                                slots = self.parse_slots_from_api_response(data, date)
-                                if slots:
-                                    logger.info(f"🎯 Successfully parsed {len(slots)} slots from API!")
-                                    return slots
-                                else:
-                                    logger.debug("⚠️ Could not parse slots from this response")
-                                    
-                            except json.JSONDecodeError:
-                                # Might be HTML response - check if it contains booking data
-                                content = response.text.lower()
-                                if 'court' in content and ('book' in content or 'slot' in content):
-                                    logger.info("📄 Got HTML response with booking content - parsing...")
-                                    slots = self.parse_html_response(response.text, venue_id, date)
-                                    if slots:
-                                        return slots
-                                        
-                        elif response.status_code == 401:
-                            logger.warning("❌ Authentication failed - token may be expired")
-                            return None
-                            
-                    except requests.exceptions.RequestException as e:
-                        logger.debug(f"Network error for {endpoint}: {e}")
-                        continue
-                    except Exception as e:
-                        logger.debug(f"Error with {endpoint}: {e}")
-                        continue
-                
-                # Small delay between endpoint attempts
-                await asyncio.sleep(0.5)
-            
-            logger.warning(f"❌ Could not fetch data from any API endpoint for venue {venue_id}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Network error: {e}")
             return None
-                
         except Exception as e:
             logger.error(f"❌ Error fetching venue slots: {e}")
             return None
+    
+    def parse_calendar_api_response(self, data: dict, date: str) -> List[Dict]:
+        """
+        Parse the actual calendar API response format
+        
+        Expected format:
+        {
+            "Status": "Success",
+            "Message": "Data found successfully.",
+            "Result": {
+                "1": {
+                    "court_name": "1",
+                    "court_available_slots": ["12:00-13:00|1|405", ...]
+                }
+            }
+        }
+        """
+        try:
+            if data.get('Status') != 'Success':
+                logger.warning(f"❌ API returned error: {data.get('Message', 'Unknown error')}")
+                return []
+                
+            result = data.get('Result', {})
+            if not result:
+                logger.info("ℹ️ No court data in API response")
+                return []
+                
+            slots = []
+            
+            for court_id, court_data in result.items():
+                court_name = court_data.get('court_name', f'Court {court_id}')
+                court_type = court_data.get('court_type', 'Unknown')
+                court_charges = court_data.get('court_charges', '0')
+                available_slots = court_data.get('court_available_slots', [])
+                
+                # Parse available slots - format: "12:00-13:00|1|405"
+                # Where: time_slot|availability(1=available,0=booked)|price
+                available_times = []
+                total_available = 0
+                
+                for slot_str in available_slots:
+                    try:
+                        parts = slot_str.split('|')
+                        if len(parts) >= 3:
+                            time_slot = parts[0]
+                            is_available = parts[1] == '1'
+                            price = parts[2]
+                            
+                            if is_available:
+                                available_times.append(time_slot)
+                                total_available += 1
+                                
+                    except Exception as e:
+                        logger.debug(f"Error parsing slot '{slot_str}': {e}")
+                        continue
+                
+                # Create slot entry
+                slot_entry = {
+                    'court_id': court_id,
+                    'court_name': court_name,
+                    'court_type': court_type,
+                    'court_charges': court_charges,
+                    'date': date,
+                    'available': total_available > 0,
+                    'available_slots': total_available,
+                    'time_slots': available_times
+                }
+                
+                slots.append(slot_entry)
+                logger.debug(f"📊 Court {court_name}: {total_available} slots available")
+            
+            logger.info(f"✅ Parsed {len(slots)} courts with total available slots")
+            return slots
+            
+        except Exception as e:
+            logger.error(f"❌ Error parsing calendar API response: {e}")
+            return []
     
     def parse_html_response(self, html: str, venue_id: int, date: str) -> List[Dict]:
         """
@@ -484,9 +543,8 @@ class BadmintonAPIChecker:
         """
         results = {}
         
-        if not await self.verify_token():
-            logger.error("❌ Token verification failed - cannot proceed with API calls")
-            return results
+        # Skip token verification since the Calendar API works without auth
+        logger.info("🚀 Using Calendar API (no authentication required)")
         
         logger.info(f"🏸 Checking {len(self.academies)} academies for {len(dates)} dates using API...")
         
