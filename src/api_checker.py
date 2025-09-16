@@ -735,9 +735,9 @@ class BadmintonAPIChecker:
                         time_headers = time_headers[:max_columns]
                         sorted_time_slots = sorted_time_slots[:max_columns]
                     
-                    # Create header row with better spacing for emojis
+                    # Create header row with precise spacing for emoji alignment  
                     header = "```\n"
-                    header += "   " + "".join(f"{h:>5}" for h in time_headers) + "\n"
+                    header += "   " + "".join(f"{h:>6}" for h in time_headers) + "\n"
                     message_lines.append(header)
                     
                     # Create rows for each court
@@ -748,17 +748,17 @@ class BadmintonAPIChecker:
                         court_name = slot['court_name']
                         all_slots = slot.get('all_time_slots', {})
                         
-                        row = f"{court_name:>2}"
+                        row = f"{court_name:>2} "
                         for time_slot in sorted_time_slots:
                             if time_slot in all_slots:
                                 is_available = all_slots[time_slot]['available']
-                                symbol = " ✅ " if is_available else " ❌ "
+                                symbol = "✅" if is_available else "❌"
                                 if is_available:
                                     date_available_count += 1
                             else:
-                                symbol = " - "
-                            # Use wider spacing for emoji alignment
-                            row += f"{symbol:>5}"
+                                symbol = "-"
+                            # Center emoji in fixed 6-character column
+                            row += f"{symbol:^6}"
                         
                         court_rows.append(row)
                     
