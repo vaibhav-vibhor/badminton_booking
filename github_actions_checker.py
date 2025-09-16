@@ -1670,33 +1670,29 @@ class GitHubActionsChecker:
             try:
                 api_checker = BadmintonAPIChecker()
                 
-                # Try to load existing token
-                if api_checker.load_existing_token():
-                    logger.info("🔑 API token loaded, attempting API-based slot check...")
+                # Try to load existing token (but don't require it to be valid)
+                api_checker.load_existing_token()  # This might load an expired token, but that's OK!
+                
+                logger.info("⚡ Attempting direct API calls (works even with expired tokens)...")
+                
+                # Skip token verification - go directly to API calls
+                api_results = await api_checker.check_all_academies(dates)
+                
+                if api_results and any(results for results in api_results.values()):
+                    # API approach successful!
+                    message = api_checker.format_results_for_telegram(api_results)
+                    self.send_telegram_message(message)
                     
-                    # Verify token and get results
-                    if await api_checker.verify_token():
-                        api_results = await api_checker.check_all_academies(dates)
-                        
-                        if api_results and any(results for results in api_results.values()):
-                            # API approach successful!
-                            message = api_checker.format_results_for_telegram(api_results)
-                            self.send_telegram_message(message)
-                            
-                            # Count total slots for logging
-                            total_api_slots = 0
-                            for academy_slots in api_results.values():
-                                total_api_slots += sum(slot['available_slots'] for slot in academy_slots if slot['available'])
-                            
-                            logger.info(f"🎯 Total slots found via API: {total_api_slots}")
-                            logger.info("✅ API-based check completed successfully - no browser automation needed!")
-                            return
-                        else:
-                            logger.warning("⚠️ API returned no results - falling back to browser automation")
-                    else:
-                        logger.warning("❌ API token verification failed - falling back to browser automation")
+                    # Count total slots for logging
+                    total_api_slots = 0
+                    for academy_slots in api_results.values():
+                        total_api_slots += sum(slot['available_slots'] for slot in academy_slots if slot['available'])
+                    
+                    logger.info(f"🎯 Total slots found via API: {total_api_slots}")
+                    logger.info("✅ API-based check completed successfully - no browser automation needed!")
+                    return
                 else:
-                    logger.info("❌ No valid API token found - falling back to browser automation")
+                    logger.warning("⚠️ API returned no results - falling back to browser automation")
                     
             except Exception as e:
                 logger.error(f"❌ API approach failed: {e} - falling back to browser automation")
