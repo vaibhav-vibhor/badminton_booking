@@ -1210,7 +1210,7 @@ class GitHubActionsChecker:
         return all_slots
     
     def format_results_message(self, all_slots, dates):
-        """Format results for Telegram"""
+        """Format results for Telegram with table format"""
         if not all_slots:
             date_strs = [datetime.strptime(d, '%Y-%m-%d').strftime('%A %b %d') for d in dates]
             return (
@@ -1244,10 +1244,10 @@ class GitHubActionsChecker:
         for date in sorted(dates):
             date_obj = datetime.strptime(date, '%Y-%m-%d')
             formatted_date = date_obj.strftime('%A, %B %d')
-            message += f"📅 *{formatted_date}*\n"
+            message += f"📅 *{formatted_date}*\n\n"
             
             if date in slots_by_date:
-                # This date has slots
+                # This date has slots - create tables for each academy
                 slots = slots_by_date[date]
                 
                 # Group by academy
@@ -1256,22 +1256,78 @@ class GitHubActionsChecker:
                     academy = slot['academy']
                     if academy not in by_academy:
                         by_academy[academy] = []
-                    by_academy[academy].append(f"{slot['court']} at {slot['time']}")
+                    by_academy[academy].append(slot)
                 
-                for academy, slot_list in by_academy.items():
-                    message += f"   🏟️ *{academy}*\n"
-                    for slot_detail in slot_list:
-                        message += f"      🏸 {slot_detail}\n"
+                # Create table for each academy
+                for academy_short in ['Kotak', 'Pullela', 'SAI']:  # Process in this order
+                    if academy_short in by_academy:
+                        message += self.create_academy_table(academy_short, by_academy[academy_short])
+                        message += "\n"
             else:
                 # This date has no slots
-                message += f"   😔 No slots available for this date\n"
-            
-            message += "\n"
+                message += f"😔 No slots available for this date\n\n"
         
         message += "🔗 [Book Now](https://booking.gopichandacademy.com/)\n"
         message += f"⏰ Checked at {datetime.now().strftime('%H:%M IST')}"
         
         return message
+    
+    def create_academy_table(self, academy_short, academy_slots):
+        """Create a table format for an academy's available slots"""
+        # Define academy-specific configurations based on actual data patterns
+        academy_configs = {
+            'Kotak': {
+                'courts': list(range(1, 7)),  # Courts 1-6
+                'time_slots': ['12:00-13:00', '13:00-14:00', '18:00-19:00', '19:00-20:00', '20:00-21:00', '21:00-22:00']
+            },
+            'Pullela': {
+                'courts': list(range(1, 9)),  # Courts 1-8 (includes court 4 as seen in data)
+                'time_slots': ['12:00-13:00', '13:00-14:00', '19:00-20:00', '20:00-21:00', '21:00-22:00']
+            },
+            'SAI': {
+                'courts': list(range(1, 10)),  # Courts 1-9
+                'time_slots': ['12:00-13:00', '13:00-14:00', '19:00-20:00', '20:00-21:00', '21:00-22:00']
+            }
+        }
+        
+        config = academy_configs.get(academy_short, {})
+        courts = config.get('courts', [])
+        time_slots = config.get('time_slots', [])
+        
+        # Create set of available court-time combinations
+        available_slots = set()
+        for slot in academy_slots:
+            court_num = slot['court'].strip()
+            time = slot['time'].strip()
+            # Extract just the number from court (in case it's "Court 1" or "1")
+            court_number = ''.join(filter(str.isdigit, court_num))
+            if court_number:
+                available_slots.add((int(court_number), time))
+        
+        # Build the table
+        table_text = f"🏟️ *{academy_short}*\n"
+        table_text += f"`{'Court':<6}"
+        
+        # Header with time slots (abbreviated for better formatting)
+        for time_slot in time_slots:
+            start_time = time_slot.split('-')[0]  # Get just the start time like "12:00"
+            table_text += f"{start_time:>8}"
+        table_text += "`\n"
+        
+        # Separator line
+        table_text += "`" + "-" * (6 + len(time_slots) * 8) + "`\n"
+        
+        # Rows for each court
+        for court in courts:
+            table_text += f"`{court:<6}"
+            for time_slot in time_slots:
+                if (court, time_slot) in available_slots:
+                    table_text += f"{'✓':>8}"  # Available
+                else:
+                    table_text += f"{'✗':>8}"  # Not available
+            table_text += "`\n"
+        
+        return table_text
     
     async def run_check(self):
         """Main checking logic"""
