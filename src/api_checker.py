@@ -752,7 +752,7 @@ class BadmintonAPIChecker:
                         for time_slot in sorted_time_slots:
                             if time_slot in all_slots:
                                 is_available = all_slots[time_slot]['available']
-                                symbol = " ✓ " if is_available else " ✗ "
+                                symbol = " ✅ " if is_available else " ❌ "
                                 if is_available:
                                     date_available_count += 1
                             else:
