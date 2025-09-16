@@ -240,22 +240,34 @@ class GitHubActionsChecker:
         return sorted(dates)
     
     async def save_session(self, page):
-        """Save session state"""
+        """Save session state with comprehensive validation"""
         try:
+            logger.info("💾 Saving session state...")
+            
             cookies = await page.context.cookies()
             local_storage = {}
             session_storage = {}
             
             try:
                 local_storage = await page.evaluate("() => Object.assign({}, localStorage)")
-            except:
-                pass
+                logger.info(f"💾 Captured {len(local_storage)} localStorage items")
+            except Exception as e:
+                logger.warning(f"Failed to capture localStorage: {e}")
             
             try:
                 session_storage = await page.evaluate("() => Object.assign({}, sessionStorage)")
-            except:
-                pass
+                logger.info(f"💾 Captured {len(session_storage)} sessionStorage items")
+            except Exception as e:
+                logger.warning(f"Failed to capture sessionStorage: {e}")
             
+            # Validate we have meaningful session data
+            if len(cookies) == 0:
+                logger.warning("⚠️ No cookies found - session may not be meaningful")
+            
+            # Ensure data directory exists
+            self.data_dir.mkdir(exist_ok=True)
+            
+            logger.info(f"🍪 Saving {len(cookies)} cookies to {self.cookies_file}")
             with open(self.cookies_file, 'w') as f:
                 json.dump(cookies, f, indent=2)
             
@@ -263,94 +275,376 @@ class GitHubActionsChecker:
                 'url': page.url,
                 'timestamp': datetime.now().isoformat(),
                 'local_storage': local_storage,
-                'session_storage': session_storage
+                'session_storage': session_storage,
+                'cookies_count': len(cookies),
+                'user_agent': await page.evaluate('navigator.userAgent')
             }
             
+            logger.info(f"📄 Saving session data to {self.session_file}")
             with open(self.session_file, 'w') as f:
                 json.dump(session_data, f, indent=2)
             
-            logger.info(f"Session saved: {len(cookies)} cookies")
-            return True
+            logger.info(f"✅ Session saved successfully: {len(cookies)} cookies, timestamp: {session_data['timestamp']}")
+            
+            # Comprehensive file validation
+            validation_success = True
+            
+            if not self.cookies_file.exists():
+                logger.error("❌ Cookies file was not created!")
+                validation_success = False
+            else:
+                cookies_size = self.cookies_file.stat().st_size
+                if cookies_size < 50:  # Expect at least some content
+                    logger.error(f"❌ Cookies file too small: {cookies_size} bytes")
+                    validation_success = False
+                else:
+                    logger.info(f"✅ Cookies file created: {cookies_size} bytes")
+            
+            if not self.session_file.exists():
+                logger.error("❌ Session file was not created!")
+                validation_success = False
+            else:
+                session_size = self.session_file.stat().st_size
+                if session_size < 100:  # Expect meaningful content
+                    logger.error(f"❌ Session file too small: {session_size} bytes")
+                    validation_success = False
+                else:
+                    logger.info(f"✅ Session file created: {session_size} bytes")
+            
+            # Test read-back to ensure files are not corrupted
+            try:
+                with open(self.cookies_file, 'r') as f:
+                    test_cookies = json.load(f)
+                logger.info(f"✅ Cookies file read-back test passed: {len(test_cookies)} cookies")
+            except Exception as e:
+                logger.error(f"❌ Cookies file read-back test failed: {e}")
+                validation_success = False
+            
+            try:
+                with open(self.session_file, 'r') as f:
+                    test_session = json.load(f)
+                logger.info(f"✅ Session file read-back test passed: {test_session.get('timestamp', 'no timestamp')}")
+            except Exception as e:
+                logger.error(f"❌ Session file read-back test failed: {e}")
+                validation_success = False
+            
+            if validation_success:
+                logger.info("🎉 Session save validation: ALL CHECKS PASSED")
+                return True
+            else:
+                logger.error("💥 Session save validation: SOME CHECKS FAILED")
+                return False
             
         except Exception as e:
-            logger.error(f"Session save failed: {e}")
+            logger.error(f"❌ Session save failed with exception: {e}")
             return False
     
     async def restore_session(self, page):
-        """Restore session state"""
+        """Restore session state with comprehensive validation"""
         try:
-            if not self.session_file.exists() or not self.cookies_file.exists():
-                logger.info("No session data found")
+            logger.info("🔍 Attempting to restore session...")
+            
+            # Check if session files exist
+            if not self.session_file.exists():
+                logger.info(f"❌ Session file not found: {self.session_file}")
                 return False
             
-            with open(self.session_file, 'r') as f:
-                session_data = json.load(f)
+            if not self.cookies_file.exists():
+                logger.info(f"❌ Cookies file not found: {self.cookies_file}")
+                return False
             
-            # Check session age (sessions expire after ~24 hours)
+            logger.info("✅ Session files found, validating content...")
+            
+            # Validate file sizes
+            cookies_size = self.cookies_file.stat().st_size
+            session_size = self.session_file.stat().st_size
+            
+            if cookies_size < 50:
+                logger.error(f"❌ Cookies file too small: {cookies_size} bytes - likely corrupted")
+                return False
+            
+            if session_size < 100:
+                logger.error(f"❌ Session file too small: {session_size} bytes - likely corrupted")
+                return False
+            
+            logger.info(f"✅ File sizes look good - cookies: {cookies_size} bytes, session: {session_size} bytes")
+            
+            # Load and validate session data
+            try:
+                with open(self.session_file, 'r') as f:
+                    session_data = json.load(f)
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Session file is corrupted (invalid JSON): {e}")
+                return False
+            
+            # Validate session data structure
+            required_fields = ['timestamp', 'url']
+            for field in required_fields:
+                if field not in session_data:
+                    logger.error(f"❌ Session data missing required field: {field}")
+                    return False
+            
+            # Check session age (allow up to 7 days to match artifact retention)
             session_time = datetime.fromisoformat(session_data['timestamp'])
             age_hours = (datetime.now() - session_time).total_seconds() / 3600
             
-            if age_hours > 24:
-                logger.info(f"Session too old ({age_hours:.1f} hours), need fresh login")
+            logger.info(f"📅 Session age: {age_hours:.1f} hours")
+            
+            if age_hours > (7 * 24):  # 7 days
+                logger.info(f"⏰ Session too old ({age_hours/24:.1f} days), need fresh login")
                 return False
             
-            with open(self.cookies_file, 'r') as f:
-                cookies = json.load(f)
+            # Load and validate cookies
+            try:
+                with open(self.cookies_file, 'r') as f:
+                    cookies = json.load(f)
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Cookies file is corrupted (invalid JSON): {e}")
+                return False
             
-            if cookies:
+            if not isinstance(cookies, list):
+                logger.error(f"❌ Cookies data is not a list: {type(cookies)}")
+                return False
+            
+            if len(cookies) == 0:
+                logger.warning("⚠️ No cookies found - session may not be meaningful")
+            
+            logger.info(f"🍪 Loading {len(cookies)} cookies...")
+            
+            # Restore cookies with validation
+            try:
                 await page.context.add_cookies(cookies)
-                logger.info(f"Restored {len(cookies)} cookies")
+                logger.info(f"✅ Restored {len(cookies)} cookies successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to restore cookies: {e}")
+                return False
             
-            # Navigate to a test page
-            await page.goto(session_data.get('url', 'https://booking.gopichandacademy.com/'), 
-                           wait_until='networkidle', timeout=15000)
-            await asyncio.sleep(3)
+            # Navigate to test page with longer timeout
+            logger.info("🌐 Navigating to test page...")
+            try:
+                await page.goto(session_data.get('url', 'https://booking.gopichandacademy.com/'), 
+                               wait_until='networkidle', timeout=20000)
+                await asyncio.sleep(5)  # Give extra time for page to load
+            except Exception as e:
+                logger.error(f"❌ Failed to navigate to test page: {e}")
+                return False
             
             # Restore local storage
-            for key, value in session_data.get('local_storage', {}).items():
+            local_storage = session_data.get('local_storage', {})
+            logger.info(f"💾 Restoring {len(local_storage)} localStorage items...")
+            restored_local = 0
+            for key, value in local_storage.items():
                 try:
                     await page.evaluate(f"localStorage.setItem({json.dumps(key)}, {json.dumps(value)})")
-                except:
-                    pass
+                    restored_local += 1
+                except Exception as e:
+                    logger.debug(f"Failed to restore localStorage {key}: {e}")
+            
+            if restored_local > 0:
+                logger.info(f"✅ Successfully restored {restored_local}/{len(local_storage)} localStorage items")
             
             # Restore session storage
-            for key, value in session_data.get('session_storage', {}).items():
+            session_storage = session_data.get('session_storage', {})
+            logger.info(f"💾 Restoring {len(session_storage)} sessionStorage items...")
+            restored_session = 0
+            for key, value in session_storage.items():
                 try:
                     await page.evaluate(f"sessionStorage.setItem({json.dumps(key)}, {json.dumps(value)})")
-                except:
-                    pass
+                    restored_session += 1
+                except Exception as e:
+                    logger.debug(f"Failed to restore sessionStorage {key}: {e}")
             
-            logger.info("Session restored successfully")
+            if restored_session > 0:
+                logger.info(f"✅ Successfully restored {restored_session}/{len(session_storage)} sessionStorage items")
+            
+            logger.info("✅ Session restored successfully - now verifying...")
             return True
             
         except Exception as e:
-            logger.error(f"Session restore failed: {e}")
+            logger.error(f"❌ Session restore failed with exception: {e}")
             return False
     
+    async def restore_session_with_retry(self, page, max_retries=3):
+        """Restore session with retry logic"""
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"🔄 Session restore attempt {attempt}/{max_retries}")
+            
+            try:
+                success = await self.restore_session(page)
+                if success:
+                    logger.info(f"✅ Session restored successfully on attempt {attempt}")
+                    return True
+                else:
+                    logger.info(f"❌ Session restore failed on attempt {attempt}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Session restore attempt {attempt} threw error: {e}")
+            
+            if attempt < max_retries:
+                logger.info(f"⏳ Waiting 3 seconds before retry...")
+                await asyncio.sleep(3)
+        
+        logger.error(f"❌ All {max_retries} session restore attempts failed")
+        return False
+
+    async def verify_login_with_retry(self, page, max_retries=2):
+        """Verify login with retry logic"""
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"🔍 Login verification attempt {attempt}/{max_retries}")
+            
+            try:
+                is_logged_in = await self.verify_login(page)
+                if is_logged_in:
+                    logger.info(f"✅ Login verified successfully on attempt {attempt}")
+                    return True
+                else:
+                    logger.info(f"❌ Login verification failed on attempt {attempt}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Login verification attempt {attempt} threw error: {e}")
+            
+            if attempt < max_retries:
+                logger.info(f"⏳ Waiting 5 seconds before retry...")
+                await asyncio.sleep(5)
+        
+        logger.error(f"❌ All {max_retries} login verification attempts failed")
+        return False
+
     async def verify_login(self, page):
-        """Check if we're logged in"""
+        """Verify if user is properly logged in with comprehensive checks"""
         try:
-            # Test access to a protected page
-            await page.goto('https://booking.gopichandacademy.com/venue-details/1', 
-                           wait_until='domcontentloaded', timeout=15000)
+            logger.info("🔍 Verifying login status...")
+            
+            # Wait a bit for the page to fully load
             await asyncio.sleep(3)
             
-            # If we're redirected to login, we're not authenticated
-            if 'login' in page.url.lower():
-                logger.info("Not logged in - redirected to login page")
-                return False
+            # Check multiple login indicators
+            login_indicators = []
             
-            # Check for booking page elements
-            date_input = await page.query_selector('input#card1[type="date"]')
-            if date_input:
-                logger.info("✅ Login verified - can access booking page")
+            # 1. Check for logout button
+            try:
+                logout_button = await page.wait_for_selector('[data-testid="logout-button"], .logout-btn, button:has-text("Logout"), button:has-text("Log Out")', 
+                                                            timeout=5000)
+                if logout_button:
+                    login_indicators.append("logout_button")
+                    logger.info("✅ Found logout button")
+            except:
+                logger.debug("❌ No logout button found")
+            
+            # 2. Check for user profile/menu
+            try:
+                profile_element = await page.wait_for_selector('.user-profile, .user-menu, [data-testid="user-menu"]', 
+                                                             timeout=5000)
+                if profile_element:
+                    login_indicators.append("profile_menu")
+                    logger.info("✅ Found user profile menu")
+            except:
+                logger.debug("❌ No user profile menu found")
+            
+            # 3. Test access to a protected page
+            try:
+                logger.info("🌐 Testing access to protected page...")
+                await page.goto('https://booking.gopichandacademy.com/venue-details/1', 
+                               wait_until='domcontentloaded', timeout=15000)
+                await asyncio.sleep(3)
+                
+                current_url = page.url
+                logger.info(f"📍 Current URL after navigation: {current_url}")
+                
+                # If we're NOT redirected to login, that's good
+                if 'login' not in current_url.lower():
+                    login_indicators.append("protected_page_access")
+                    logger.info("✅ Can access protected page")
+                else:
+                    logger.debug("❌ Redirected to login page")
+            except Exception as e:
+                logger.debug(f"❌ Failed to test protected page access: {e}")
+            
+            # 4. Check for booking page elements
+            try:
+                date_input = await page.query_selector('input#card1[type="date"]')
+                if date_input:
+                    login_indicators.append("booking_elements")
+                    logger.info("✅ Found booking page elements")
+                    
+                    # Double-check by looking for other booking elements
+                    court_elements = await page.query_selector_all('div.court-item')
+                    if court_elements:
+                        login_indicators.append("court_elements")
+                        logger.info(f"✅ Found {len(court_elements)} court elements")
+                else:
+                    logger.debug("❌ No booking date input found")
+            except Exception as e:
+                logger.debug(f"❌ Error checking booking elements: {e}")
+            
+            # 5. Check for login modal absence
+            try:
+                # This should timeout if we're logged in (no modal present)
+                modal = await page.wait_for_selector('.modal, [role="dialog"], .login-modal', timeout=3000)
+                if modal:
+                    modal_visible = await modal.is_visible()
+                    if not modal_visible:
+                        login_indicators.append("modal_hidden")
+                        logger.info("✅ Login modal is hidden")
+                    else:
+                        logger.debug("❌ Login modal is visible")
+            except:
+                # Timeout is good - means no modal found
+                login_indicators.append("no_modal_found")
+                logger.info("✅ No login modal found")
+            
+            # 6. Check localStorage for auth tokens
+            try:
+                auth_data = await page.evaluate("""
+                    () => {
+                        const token = localStorage.getItem('authToken') || 
+                                    localStorage.getItem('auth_token') || 
+                                    localStorage.getItem('token') ||
+                                    localStorage.getItem('user_token');
+                        const user = localStorage.getItem('user') ||
+                                   localStorage.getItem('userData') ||
+                                   localStorage.getItem('currentUser');
+                        return { token: !!token, user: !!user };
+                    }
+                """)
+                
+                if auth_data.get('token') or auth_data.get('user'):
+                    login_indicators.append("auth_data_present")
+                    logger.info("✅ Authentication data found in localStorage")
+            except:
+                logger.debug("❌ No authentication data in localStorage")
+            
+            # Decision logic
+            logger.info(f"🔍 Found {len(login_indicators)} login indicators: {login_indicators}")
+            
+            # We need at least 2 indicators to be confident
+            if len(login_indicators) >= 2:
+                logger.info(f"✅ Login verified! Found {len(login_indicators)} positive indicators")
                 return True
             else:
-                logger.info("❌ Login check failed - no booking elements found")
-                return False
+                logger.info(f"❌ Login not verified. Only {len(login_indicators)} indicators found")
                 
+                # Debug: Check what elements are actually present
+                try:
+                    all_inputs = await page.query_selector_all('input')
+                    logger.info(f"🔍 Debug: Found {len(all_inputs)} input elements on page")
+                    
+                    # Check page title for more context
+                    title = await page.title()
+                    logger.info(f"📄 Page title: {title}")
+                except:
+                    pass
+                
+                # Take screenshot for debugging
+                if self.github_mode:
+                    screenshot_path = f"data/from_github/verify_login_failed.png"
+                    await page.screenshot(path=screenshot_path)
+                    logger.info(f"📷 Debug screenshot saved: {screenshot_path}")
+                
+                return False
+            
         except Exception as e:
-            logger.error(f"Login verification failed: {e}")
+            logger.error(f"❌ Login verification failed: {e}")
             return False
     
     async def interactive_login(self, page):
@@ -1085,6 +1379,14 @@ class GitHubActionsChecker:
             if 'login' not in page.url.lower():
                 logger.info("✅ Interactive login successful!")
                 
+                # IMMEDIATELY save session after successful login
+                logger.info("💾 Saving session immediately after successful login...")
+                save_success = await self.save_session(page)
+                if save_success:
+                    logger.info("✅ Session saved immediately - future runs should not require OTP!")
+                else:
+                    logger.error("❌ Failed to save session immediately - next run may require OTP again")
+                
                 success_msg = (
                     "✅ *Login Successful!*\n\n"
                     "Your badminton slot checker is now logged in.\n"
@@ -1093,8 +1395,6 @@ class GitHubActionsChecker:
                 )
                 self.send_telegram_message(success_msg)
                 
-                # Save the session
-                await self.save_session(page)
                 return True
             else:
                 logger.error("❌ Login failed - still on login page")
@@ -1337,6 +1637,20 @@ class GitHubActionsChecker:
         """Main checking logic"""
         logger.info("🏸 Starting badminton slot check...")
         
+        # Debug: Check environment and file system
+        is_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
+        logger.info(f"🔍 Environment: {'GitHub Actions' if is_github_actions else 'Local'}")
+        logger.info(f"📁 Data directory: {self.data_dir}")
+        logger.info(f"🍪 Cookies file: {self.cookies_file}")
+        logger.info(f"📄 Session file: {self.session_file}")
+        
+        # Check if data directory exists and list contents
+        if self.data_dir.exists():
+            files = list(self.data_dir.iterdir())
+            logger.info(f"📂 Data directory contains {len(files)} files: {[f.name for f in files]}")
+        else:
+            logger.info("📂 Data directory does not exist")
+        
         dates = self.get_check_dates()
         date_strs = [datetime.strptime(d, '%Y-%m-%d').strftime('%A %b %d') for d in dates]
         logger.info(f"📅 Checking dates: {' & '.join(date_strs)}")
@@ -1368,16 +1682,25 @@ class GitHubActionsChecker:
                 # Try to restore session unless forced fresh login
                 session_restored = False
                 if not self.force_fresh_login:
-                    session_restored = await self.restore_session(page)
-                
-                # Verify login
-                if session_restored:
-                    logged_in = await self.verify_login(page)
+                    logger.info("🔄 Attempting to restore existing session...")
+                    session_restored = await self.restore_session_with_retry(page)
                 else:
-                    logged_in = False
+                    logger.info("🔄 Force fresh login enabled - skipping session restore")
+                
+                # Verify login with retry logic
+                logged_in = False
+                if session_restored:
+                    logger.info("✅ Session restored, now verifying login...")
+                    logged_in = await self.verify_login_with_retry(page)
+                    if logged_in:
+                        logger.info("🎉 Session successfully restored and verified!")
+                    else:
+                        logger.warning("❌ Session restored but login verification failed - will need fresh login")
+                else:
+                    logger.info("❌ Session restore failed or skipped")
                 
                 if not logged_in:
-                    logger.warning("❌ Not logged in - attempting interactive login")
+                    logger.warning("🔐 Not logged in - attempting interactive login")
                     
                     # Try interactive login
                     login_success = await self.interactive_login(page)
@@ -1401,7 +1724,12 @@ class GitHubActionsChecker:
                         logger.info(f"😔 {academy['short']}: No slots available")
                 
                 # Save session for next run
-                await self.save_session(page)
+                logger.info("💾 Attempting to save session for next run...")
+                save_success = await self.save_session(page)
+                if save_success:
+                    logger.info("✅ Session saved successfully for next run!")
+                else:
+                    logger.error("❌ Failed to save session - next run will require fresh login")
                 
                 # Send results
                 message = self.format_results_message(all_available_slots, dates)
