@@ -662,7 +662,13 @@ class BadmintonAPIChecker:
                     continue
                     
                 # Create academy header
-                short_name = academy_name.replace("Pullela Gopichand Badminton Academy", "Pullela").replace("SAI ", "")
+                # Map to shorter display names for better readability
+                if "SAI Pullela Gopichand National Badminton Academy" in academy_name:
+                    short_name = "SAI"
+                elif "Pullela Gopichand Badminton Academy" in academy_name:
+                    short_name = "Pullela"
+                else:
+                    short_name = academy_name
                 message_lines.append(f"\n📍 *{short_name}*")
                 
                 # Group by date
