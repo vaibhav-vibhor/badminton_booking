@@ -2,12 +2,12 @@
     "check_interval_minutes": 15,
     "check_days": {
         "monday": true,
-        "tuesday": false,
+        "tuesday": true,
         "wednesday": false,
         "thursday": false,
         "friday": true,
         "saturday": false,
-        "sunday": false
+        "sunday": true
     },
     "browser_settings": {
         "headless": true,

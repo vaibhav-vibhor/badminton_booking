@@ -665,6 +665,8 @@ class BadmintonAPIChecker:
                 # Map to shorter display names for better readability
                 if "SAI Pullela Gopichand National Badminton Academy" in academy_name:
                     short_name = "SAI"
+                elif "Kotak Pullela Gopichand Badminton Academy" in academy_name:
+                    short_name = "Kotak"
                 elif "Pullela Gopichand Badminton Academy" in academy_name:
                     short_name = "Pullela"
                 else:
@@ -769,7 +771,7 @@ class BadmintonAPIChecker:
                                 if is_available:
                                     date_available_count += 1
                             else:
-                                symbol = "-"
+                                symbol = "•"  # Use dot for missing data (not available)
                             # Center symbol in fixed 6-character column
                             row += f"{symbol:^6}"
                         
