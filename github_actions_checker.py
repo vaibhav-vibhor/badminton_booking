@@ -183,9 +183,10 @@ class GitHubActionsChecker:
             return None
     
     def get_check_dates(self):
-        """Get next upcoming Friday and Monday using helper function"""
+        """Get dates to check based on configuration using helper function"""
         dates_info = get_check_dates()
-        return [dates_info['friday']['date'], dates_info['monday']['date']]
+        # Extract just the date strings for API calls
+        return [info['date'] for info in dates_info.values()]
     
     async def save_session(self, page):
         """Save session state with comprehensive validation"""

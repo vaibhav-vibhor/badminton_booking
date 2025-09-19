@@ -1,5 +1,14 @@
 {
     "check_interval_minutes": 15,
+    "check_days": {
+        "monday": true,
+        "tuesday": false,
+        "wednesday": false,
+        "thursday": false,
+        "friday": true,
+        "saturday": false,
+        "sunday": false
+    },
     "browser_settings": {
         "headless": true,
         "timeout": 30000,
@@ -22,7 +31,7 @@
     "urls": {
         "base_url": "https://booking.gopichandacademy.com/",
         "kotak": "https://booking.gopichandacademy.com/venue-details/1",
-        "pullela": "https://booking.gopichandacademy.com/venue-details/2", 
+        "pullela": "https://booking.gopichandacademy.com/venue-details/2",
         "sai": "https://booking.gopichandacademy.com/venue-details/3"
     },
     "logging": {

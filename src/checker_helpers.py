@@ -72,36 +72,83 @@ def send_telegram_message(telegram_token, chat_id, message):
 
 
 def get_check_dates():
-    """Get the next Friday and Monday dates to check (in IST timezone)"""
+    """Get dates to check based on configuration settings (in IST timezone)"""
     # Use IST timezone for date calculations
     ist_timezone = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(ist_timezone)
     
-    # Find next Friday (weekday 4, where Monday=0)
-    days_until_friday = (4 - today.weekday()) % 7
-    if days_until_friday == 0:  # Today is Friday
-        days_until_friday = 7  # Get next Friday instead
+    # Load configuration
+    config_path = Path(__file__).parent.parent / 'config' / 'settings.json'
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+            check_days = config.get('check_days', {
+                'monday': True,
+                'tuesday': False, 
+                'wednesday': False,
+                'thursday': False,
+                'friday': True,
+                'saturday': False,
+                'sunday': False
+            })
+    except Exception as e:
+        logger.warning(f"⚠️ Could not load config, using defaults: {e}")
+        # Default to Friday and Monday
+        check_days = {
+            'monday': True,
+            'tuesday': False,
+            'wednesday': False, 
+            'thursday': False,
+            'friday': True,
+            'saturday': False,
+            'sunday': False
+        }
     
-    next_friday = today + timedelta(days=days_until_friday)
-    
-    # Find next Monday after that Friday (3 days after Friday)
-    # Friday -> Saturday (1 day) -> Sunday (2 days) -> Monday (3 days)
-    next_monday = next_friday + timedelta(days=3)
-    
-    # Format dates for API calls (without timezone info)
-    friday_str = next_friday.strftime('%Y-%m-%d')
-    monday_str = next_monday.strftime('%Y-%m-%d')
-    
-    # Format for display
-    friday_display = next_friday.strftime('%a %b %d')
-    monday_display = next_monday.strftime('%a %b %d')
-    
-    logger.info(f"📅 Checking dates: {friday_display} & {monday_display}")
-    
-    return {
-        'friday': {'date': friday_str, 'display': friday_display},
-        'monday': {'date': monday_str, 'display': monday_display}
+    # Map day names to weekday numbers (Monday=0, Sunday=6)
+    day_mapping = {
+        'monday': 0,
+        'tuesday': 1,
+        'wednesday': 2,
+        'thursday': 3,
+        'friday': 4,
+        'saturday': 5,
+        'sunday': 6
     }
+    
+    # Find enabled days
+    enabled_days = [day_mapping[day] for day, enabled in check_days.items() if enabled]
+    
+    if not enabled_days:
+        logger.warning("⚠️ No days enabled in config, defaulting to Friday and Monday")
+        enabled_days = [4, 0]  # Friday and Monday
+    
+    # Calculate next occurrence of each enabled day
+    upcoming_dates = {}
+    
+    for target_day in enabled_days:
+        # Calculate days until target day
+        days_until = (target_day - today.weekday()) % 7
+        if days_until == 0:  # Today is the target day
+            days_until = 7  # Get next occurrence instead
+        
+        next_date = today + timedelta(days=days_until)
+        
+        # Convert weekday number back to day name
+        day_name = next((name for name, num in day_mapping.items() if num == target_day), str(target_day))
+        
+        upcoming_dates[day_name] = {
+            'date': next_date.strftime('%Y-%m-%d'),
+            'display': next_date.strftime('%a %b %d')
+        }
+    
+    # Sort by date to maintain consistent order
+    sorted_dates = dict(sorted(upcoming_dates.items(), key=lambda x: x[1]['date']))
+    
+    # Log what days we're checking
+    display_names = [info['display'] for info in sorted_dates.values()]
+    logger.info(f"📅 Checking dates: {' & '.join(display_names)}")
+    
+    return sorted_dates
 
 
 def format_results_message(all_slots, dates):
